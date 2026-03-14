@@ -1,0 +1,19 @@
+[project]
+name = "emotion-recap"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "colmi-r02-client",
+    "pyaudio>=0.2.14",
+    "seeed-grove-py",
+]
+
+[tool.uv.workspace]
+members = [
+]
+
+[tool.uv.sources]
+seeed-grove-py = { path = "external/grove.py" }
+colmi-r02-client = { git = "https://github.com/tahnok/colmi_r02_client" }
