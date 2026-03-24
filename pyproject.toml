@@ -5,6 +5,7 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
+    "bleak>=0.22.3",
     "colmi-r02-client",
     "numpy>=2.4.3",
     "pyaudio>=0.2.14",
