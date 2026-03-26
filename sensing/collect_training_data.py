@@ -23,6 +23,7 @@ import sys
 import threading
 import time
 import wave
+import subprocess
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -197,6 +198,28 @@ def audio_thread(state: SessionState) -> None:
         print(f"[AUDIO] Saved as {wav_path}")
 
 
+def remux_to_mp4(session_dir: Path) -> None:
+    h264_path = session_dir / "video.h264"
+    mp4_path = session_dir / "video.mp4"
+
+    if not h264_path.exists():
+        print("[VIDEO] No h264 file to mux")
+        return
+
+    print("[VIDEO] Converting h264 → mp4 (no re-encode)...")
+
+    cmd = [
+        "ffmpeg",
+        "-y",
+        "-framerate", str(VIDEO_FRAMERATE),
+        "-i", str(h264_path),
+        "-c", "copy",
+        str(mp4_path),
+    ]
+
+    subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    print(f"[VIDEO] Saved as {mp4_path}")
+
 def start_video(state: SessionState) -> tuple[Picamera2, H264Encoder]:
     video_path = state.session_dir / "video.h264"
 
@@ -327,6 +350,8 @@ async def main() -> None:
     t_audio.join(timeout=10)
 
     stop_video(cam)
+
+    remux_to_mp4(state.session_dir)
 
     # Flush CSV and metadata
     duration_s = time.time() - state.start_time
