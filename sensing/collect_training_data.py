@@ -2,12 +2,15 @@
 collect_training_data.py
 
 Captures synchronised GSR + HRV features, audio, and video for arousal model training.
+Optionally runs live Isolation Forest inference on each feature window.
 
 Usage:
-    python collect_training_data.py <gsr_adc_channel> [--label <label>]
+    python collect_training_data.py <gsr_adc_channel> [--label <label>] [--model <path>]
+
+    --model   Path to trained iforest.pkl. If omitted, inference is skipped.
 
 Outputs to ./sessions/<timestamp>/
-    features.csv, one row per feature window (GSR + HRV + timestamp + label)
+    features.csv, one row per feature window (GSR + HRV + timestamp + label + anomaly score)
     audio.wav, continuous audio for the session
     video.h264, continuous video for the session
     session.json, metadata (sample rates, window sizes, label, duration)
@@ -26,6 +29,7 @@ import wave
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
+from typing import Optional
 
 import numpy as np
 import pyaudio
@@ -36,6 +40,7 @@ from picamera2.outputs import FileOutput
 
 from gsr_features import GSRFeatureExtractor, DEFAULT_SAMPLE_RATE_HZ as GSR_RATE
 from hrv_features import HRVFeatureExtractor
+from arousal_detector import ArousalDetector, ArousalResult
 
 BLE_ADDRESS = "00:22:D0:47:9C:DE"
 HR_CHAR = "00002a37-0000-1000-8000-00805f9b34fb"
@@ -46,9 +51,9 @@ AUDIO_CHANNELS = 2
 AUDIO_CHUNK = 1024
 AUDIO_FORMAT = pyaudio.paInt16
 
-VIDEO_WIDTH = 1920
-VIDEO_HEIGHT = 1080
-VIDEO_FRAMERATE = 30
+VIDEO_WIDTH = 1280
+VIDEO_HEIGHT = 720
+VIDEO_FRAMERATE = 10
 
 HRV_WINDOW_S = 60.0
 HRV_STEP_S = 30.0
@@ -73,13 +78,34 @@ class SessionState:
     features_lock: threading.Lock = field(default_factory=threading.Lock)
     feature_rows: list = field(default_factory=list)
 
+    # Optional live detector — None means inference is disabled
+    detector: Optional[ArousalDetector] = None
+
 
 def merge_and_save(
     state: SessionState,
     source: str,
     features: dict,
 ) -> None:
-    # Add timing info and append to the session row list.
+    # ------------------------------------------------------------------ #
+    # 1. Run live inference if a model is loaded                          #
+    # ------------------------------------------------------------------ #
+    result: Optional[ArousalResult] = None
+    if state.detector is not None:
+        result = state.detector.score(features, source=source)
+        if result is not None:
+            trend = state.detector.trend()
+            trend_str = f" trend={trend}" if trend else ""
+            print(
+                f"[DETECTOR] {result.summary()}{trend_str} "
+                f"(missing={result.missing or 'none'})"
+            )
+        else:
+            print(f"[DETECTOR] Skipped — too many features missing for '{source}' window.")
+
+    # ------------------------------------------------------------------ #
+    # 2. Build CSV row (same as before, with score columns appended)      #
+    # ------------------------------------------------------------------ #
     row = {
         "source": source,
         "label": state.label,
@@ -87,8 +113,19 @@ def merge_and_save(
         "window_start_time": time.time() - state.start_time,
         **{f"{source}_{k}": v for k, v in features.items()},
     }
+
+    if result is not None:
+        row["anomaly_score"]      = result.score
+        row["anomaly_normalised"] = result.normalised
+        row["is_aroused"]         = int(result.is_aroused)
+    else:
+        row["anomaly_score"]      = None
+        row["anomaly_normalised"] = None
+        row["is_aroused"]         = None
+
     with state.features_lock:
         state.feature_rows.append(row)
+
     print(
         f"[{source.upper()}] window saved "
         f"t={row['window_start_time']:.1f}s label={state.label}"
@@ -152,7 +189,7 @@ def gsr_thread(state: SessionState) -> None:
         extractor.add_reading(raw)
 
         fill = extractor.buffer_fill_fraction
-        if int(fill * 10) % 2 == 0:  # Print every 20% fill
+        if int(fill * 10) % 2 == 0:
             print(f"[GSR] buffer: {fill:.0%}", end="\r")
 
         if extractor.window_ready():
@@ -201,23 +238,42 @@ def start_video(state: SessionState) -> tuple[Picamera2, H264Encoder]:
     video_path = state.session_dir / "video.h264"
 
     cam = Picamera2()
-    config = cam.create_video_configuration(
+
+    config = picam2.create_preview_configuration(
         main={"size": (VIDEO_WIDTH, VIDEO_HEIGHT)},
+        sensor={"output_size": (4608, 2592)},
     )
+
+    picam2.configure(config)
     cam.configure(config)
 
     encoder = H264Encoder(bitrate=10_000_000)
     output = FileOutput(str(video_path))
 
     cam.start_recording(encoder, output)
-    print(f"[VIDEO] Recording saved as {video_path}")
+    print(f"[VIDEO] Recording to {video_path}")
     return cam, encoder
 
 
-def stop_video(cam: Picamera2) -> None:
+def stop_video(cam: Picamera2, session_dir: Path) -> None:
+    import subprocess
     cam.stop_recording()
     cam.close()
     print("[VIDEO] Stopped")
+
+    h264_path = session_dir / "video.h264"
+    mp4_path  = session_dir / "video.mp4"
+    print("[VIDEO] Converting to MP4...")
+    result = subprocess.run(
+        ["ffmpeg", "-y", "-framerate", str(VIDEO_FRAMERATE),
+         "-i", str(h264_path), "-c", "copy", str(mp4_path)],
+        capture_output=True, text=True,
+    )
+    if result.returncode == 0:
+        h264_path.unlink()  # Remove raw file once MP4 is confirmed good
+        print(f"[VIDEO] Saved as {mp4_path}")
+    else:
+        print(f"[VIDEO] ffmpeg conversion failed, keeping raw .h264\n{result.stderr}")
 
 
 async def ble_task(state: SessionState) -> None:
@@ -259,7 +315,6 @@ async def ble_task(state: SessionState) -> None:
         print(f"[HRV] Connected: {client.is_connected}")
         await client.start_notify(HR_CHAR, handle_hr)
 
-        # Keep alive until session ends
         while state.running:
             await asyncio.sleep(1.0)
 
@@ -281,6 +336,7 @@ def save_metadata(state: SessionState, duration_s: float) -> None:
         "video_resolution": [VIDEO_WIDTH, VIDEO_HEIGHT],
         "ble_address": BLE_ADDRESS,
         "n_feature_rows": len(state.feature_rows),
+        "model_used": str(state.detector) if state.detector else None,
     }
     meta_path = state.session_dir / "session.json"
     with open(meta_path, "w") as f:
@@ -295,7 +351,26 @@ async def main() -> None:
         if idx + 1 < len(sys.argv):
             label = sys.argv[idx + 1].replace(" ", "_")
 
-    state = SessionState(label=label, session_dir=make_session_dir(label))
+    # ------------------------------------------------------------------ #
+    # Load detector if --model is passed                                  #
+    # ------------------------------------------------------------------ #
+    detector: Optional[ArousalDetector] = None
+    if "--model" in sys.argv:
+        idx = sys.argv.index("--model")
+        if idx + 1 < len(sys.argv):
+            model_path = Path(sys.argv[idx + 1])
+            try:
+                detector = ArousalDetector(model_path)
+            except FileNotFoundError as e:
+                print(f"[WARN] Could not load model: {e}. Running without inference.")
+    else:
+        print("[SESSION] No --model supplied. Running capture-only mode (no live inference).")
+
+    state = SessionState(
+        label=label,
+        session_dir=make_session_dir(label),
+        detector=detector,
+    )
     print(f"[SESSION] Starting label='{label}' saved at {state.session_dir}")
 
     loop = asyncio.get_running_loop()
@@ -307,10 +382,8 @@ async def main() -> None:
     signal.signal(signal.SIGINT, _shutdown)
     signal.signal(signal.SIGTERM, _shutdown)
 
-    # Start video (picamera2 manages its own thread)
     cam, encoder = start_video(state)
 
-    # Start GSR and audio in daemon threads
     t_gsr = threading.Thread(target=gsr_thread, args=(state,), daemon=True)
     t_audio = threading.Thread(target=audio_thread, args=(state,), daemon=True)
     t_gsr.start()
@@ -326,9 +399,8 @@ async def main() -> None:
     t_gsr.join(timeout=5)
     t_audio.join(timeout=10)
 
-    stop_video(cam)
+    stop_video(cam, state.session_dir)
 
-    # Flush CSV and metadata
     duration_s = time.time() - state.start_time
     flush_csv(state)
     save_metadata(state, duration_s)
