@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Arousal Clip Viewer</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=DM+Mono:ital,wght@0,300;0,400;0,500;1,300&family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;1,9..40,300&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+
+<header>
+  <h1>Clip Viewer</h1>
+  <span class="dot">·</span>
+  <span class="subtitle">{{ sessions|length }} session{{ 's' if sessions|length != 1 else '' }}</span>
+</header>
+
+<div class="layout">
+  <aside class="sidebar">
+    <div class="sidebar-label">Sessions</div>
+    {% for s in sessions %}
+    <div class="session-item {% if loop.first %}active{% endif %}"
+         onclick="selectSession('{{ s.id }}')"
+         id="nav-{{ s.id }}">
+      <div class="session-date">{{ s.date }}</div>
+      <div class="session-label">{{ s.label.replace('_', ' ') }}</div>
+      <div class="session-meta">
+        <span class="session-time">{{ s.time }}</span>
+        <span class="clip-badge {% if s.n_clips == 0 %}zero{% endif %}">
+          {{ s.n_clips }} clip{{ 's' if s.n_clips != 1 else '' }}
+        </span>
+        {% if s.duration_s %}
+        <span class="duration-tag">{{ (s.duration_s / 60)|round(1) }}m</span>
+        {% endif %}
+      </div>
+    </div>
+    {% endfor %}
+  </aside>
+
+  <main class="main" id="main-panel">
+    {% if sessions %}
+      {% for s in sessions %}
+      <div class="session-view" id="view-{{ s.id }}" style="{{ 'display:block' if loop.first else 'display:none' }}">
+
+        <div class="session-header">
+          <div class="session-header-top">
+            <div>
+              <div class="session-title">{{ s.label.replace('_', ' ') }}</div>
+              <div class="session-full-date">{{ s.date }} · {{ s.time }}</div>
+            </div>
+          </div>
+          <div class="stat-row">
+            <div class="stat">
+              <span class="stat-val">{{ s.n_clips }}</span>
+              <span class="stat-key">Clips saved</span>
+            </div>
+            {% if s.duration_s %}
+            <div class="stat">
+              <span class="stat-val">{{ (s.duration_s / 60)|round(1) }}</span>
+              <span class="stat-key">Duration (min)</span>
+            </div>
+            {% endif %}
+            {% if s.n_clips > 0 and s.duration_s %}
+            <div class="stat">
+              <span class="stat-val">{{ ((s.n_clips / (s.duration_s / 60)))|round(2) }}</span>
+              <span class="stat-key">Clips / min</span>
+            </div>
+            {% endif %}
+          </div>
+        </div>
+
+        {% if s.clips %}
+        <div class="clips-grid">
+          {% for clip in s.clips %}
+          <div class="clip-card" id="card-{{ s.id }}-{{ clip.id }}">
+
+            <div class="clip-card-header" onclick="toggleClip('{{ s.id }}', '{{ clip.id }}')">
+              <div class="clip-left">
+                <span class="clip-index">{{ "%02d"|format(loop.index) }}</span>
+                <span class="clip-time-stamp">{{ clip.time }}</span>
+                {% if clip.score is not none %}
+                <span class="score-pill {{ 'high' if clip.norm > 0.7 else 'mid' }}">
+                  score {{ "%.3f"|format(clip.score) }}
+                </span>
+                {% endif %}
+              </div>
+              <div class="clip-right">
+                {% if clip.norm is not none %}
+                <div class="norm-bar-wrap">
+                  <div class="norm-bar-track">
+                    <div class="norm-bar-fill" style="width: {{ (clip.norm * 100)|int }}%"></div>
+                  </div>
+                  <span class="norm-val">{{ "%.2f"|format(clip.norm) }}</span>
+                </div>
+                {% endif %}
+                <span class="chevron">▼</span>
+              </div>
+            </div>
+
+            <div class="clip-body">
+              <div class="clip-inner">
+
+                <div class="media-section">
+                  {% if clip.has_video %}
+                  <h4>Video · {{ clip.video_buffer }}s buffer</h4>
+                  <video controls preload="none"
+                         src="/media/{{ s.id }}/clips/{{ clip.id }}/video">
+                  </video>
+                  {% endif %}
+                  {% if clip.has_audio %}
+                  <h4 style="margin-top:14px">Audio · {{ clip.audio_pre }}s pre + {{ clip.audio_post }}s post</h4>
+                  <audio controls preload="none"
+                         src="/media/{{ s.id }}/clips/{{ clip.id }}/audio">
+                  </audio>
+                  {% endif %}
+                </div>
+
+                <div>
+                  <div class="feature-section-label">GSR at trigger</div>
+                  <div class="feature-grid">
+                    {% set gsr = [
+                      ('SCL mean',  clip.features.scl_mean,  'µS'),
+                      ('SCR / min', clip.features.scr_count, ''),
+                      ('Phasic std',clip.features.phasic_std,'µS'),
+                      ('SCR amp',   clip.features.scr_amp,   'µS'),
+                    ] %}
+                    {% for key, val, unit in gsr %}
+                    <div class="feature-item">
+                      <div class="feature-item-key">{{ key }}</div>
+                      <div class="feature-item-val">
+                        {% if val is not none %}
+                          {{ "%.3f"|format(val) }}<span class="feature-item-unit">{{ unit }}</span>
+                        {% else %}
+                          <span class="null-val">—</span>
+                        {% endif %}
+                      </div>
+                    </div>
+                    {% endfor %}
+                  </div>
+
+                  <div class="feature-section-label">HRV at trigger</div>
+                  <div class="feature-grid">
+                    {% set hrv = [
+                      ('HR mean', clip.features.hr_mean, 'bpm'),
+                      ('RMSSD',   clip.features.rmssd,   'ms'),
+                      ('SDNN',    clip.features.sdnn,    'ms'),
+                      ('pNN50',   clip.features.pnn50,   ''),
+                    ] %}
+                    {% for key, val, unit in hrv %}
+                    <div class="feature-item">
+                      <div class="feature-item-key">{{ key }}</div>
+                      <div class="feature-item-val">
+                        {% if val is not none %}
+                          {{ "%.3f"|format(val) }}<span class="feature-item-unit">{{ unit }}</span>
+                        {% else %}
+                          <span class="null-val">—</span>
+                        {% endif %}
+                      </div>
+                    </div>
+                    {% endfor %}
+                  </div>
+                </div>
+
+              </div>
+            </div>
+          </div>
+          {% endfor %}
+        </div>
+
+        {% else %}
+        <div class="no-clips">// no clips recorded for this session</div>
+        {% endif %}
+
+      </div>
+      {% endfor %}
+    {% else %}
+      <div class="empty-state">
+        <span class="empty-icon">◎</span>
+        <span>no sessions found</span>
+        <span style="color: var(--text-dim); font-size:10px">looking in: {{ sessions_dir }}</span>
+      </div>
+    {% endif %}
+  </main>
+</div>
+
+<script src="{{ url_for('static', filename='app.js') }}"></script>
+</body>
+</html>
