@@ -101,7 +101,9 @@ def merge_and_save(
                 f"(missing={result.missing or 'none'})"
             )
         else:
-            print(f"[DETECTOR] Skipped — too many features missing for '{source}' window.")
+            print(
+                f"[DETECTOR] Skipped — too many features missing for '{source}' window."
+            )
 
     # ------------------------------------------------------------------ #
     # 2. Build CSV row (same as before, with score columns appended)      #
@@ -115,13 +117,13 @@ def merge_and_save(
     }
 
     if result is not None:
-        row["anomaly_score"]      = result.score
+        row["anomaly_score"] = result.score
         row["anomaly_normalised"] = result.normalised
-        row["is_aroused"]         = int(result.is_aroused)
+        row["is_aroused"] = int(result.is_aroused)
     else:
-        row["anomaly_score"]      = None
+        row["anomaly_score"] = None
         row["anomaly_normalised"] = None
-        row["is_aroused"]         = None
+        row["is_aroused"] = None
 
     with state.features_lock:
         state.feature_rows.append(row)
@@ -242,6 +244,7 @@ def start_video(state: SessionState) -> tuple[Picamera2, H264Encoder]:
     config = picam2.create_preview_configuration(
         main={"size": (VIDEO_WIDTH, VIDEO_HEIGHT)},
         sensor={"output_size": (4608, 2592)},
+        controls={"FrameDurationLimits": (100_000, 100_000)},  # 100ms = 10fps
     )
 
     picam2.configure(config)
@@ -257,17 +260,28 @@ def start_video(state: SessionState) -> tuple[Picamera2, H264Encoder]:
 
 def stop_video(cam: Picamera2, session_dir: Path) -> None:
     import subprocess
+
     cam.stop_recording()
     cam.close()
     print("[VIDEO] Stopped")
 
     h264_path = session_dir / "video.h264"
-    mp4_path  = session_dir / "video.mp4"
+    mp4_path = session_dir / "video.mp4"
     print("[VIDEO] Converting to MP4...")
     result = subprocess.run(
-        ["ffmpeg", "-y", "-framerate", str(VIDEO_FRAMERATE),
-         "-i", str(h264_path), "-c", "copy", str(mp4_path)],
-        capture_output=True, text=True,
+        [
+            "ffmpeg",
+            "-y",
+            "-framerate",
+            str(VIDEO_FRAMERATE),
+            "-i",
+            str(h264_path),
+            "-c",
+            "copy",
+            str(mp4_path),
+        ],
+        capture_output=True,
+        text=True,
     )
     if result.returncode == 0:
         h264_path.unlink()  # Remove raw file once MP4 is confirmed good
@@ -364,7 +378,9 @@ async def main() -> None:
             except FileNotFoundError as e:
                 print(f"[WARN] Could not load model: {e}. Running without inference.")
     else:
-        print("[SESSION] No --model supplied. Running capture-only mode (no live inference).")
+        print(
+            "[SESSION] No --model supplied. Running capture-only mode (no live inference)."
+        )
 
     state = SessionState(
         label=label,

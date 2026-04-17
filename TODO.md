@@ -1,0 +1,5 @@
+- Add baseline and non-baseline section to webapp
+- Make sure there is enough baseline
+- Get stats and results for disseration
+- Make clips available in UI, and maybe plots for baseline sessions
+- What can i do to add to this and make the model better

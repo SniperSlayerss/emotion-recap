@@ -43,7 +43,7 @@ def get_sessions() -> list[dict]:
             with open(meta_path) as f:
                 meta = json.load(f)
 
-        clips = get_clips(session_dir)
+        clips = get_clips(session_dir / "clips")
 
         parts = session_dir.name.split("_", 2)
         try:
@@ -68,7 +68,7 @@ def get_sessions() -> list[dict]:
 
 def get_clips(session_dir: Path) -> list[dict]:
     """Return all clips for a session, sorted by time."""
-    clips_dir = session_dir / "clips"
+    clips_dir = session_dir
     clips = []
     if not clips_dir.exists():
         return clips
