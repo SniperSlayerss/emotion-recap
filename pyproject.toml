@@ -16,6 +16,7 @@ dependencies = [
     "pyaudio>=0.2.14",
     "scipy>=1.17.1",
     "seeed-grove-py",
+    "tabulate>=0.10.0",
     "torch>=2.11.0",
     "transformers>=5.5.4",
 ]

@@ -1,16 +1,11 @@
 """
 tune_threshold.py
 
-Sweep contamination values, retrain on baseline sessions, and report the
-flag rate per session (baseline AND non-baseline) for each value.
+Sweep contamination values for the merged-feature model (see
+retrain_baseline.py / train_model.py), report flag rates per session.
 
-The goal is to find a contamination that:
-  - Flags ~0–10% of BASELINE sessions (low false positive rate)
-  - Flags significantly more of your non-baseline sessions (e.g. horror)
-
-A big gap between the two columns = a discriminating model.
-A small gap = the model can't tell them apart (more data / better features
-needed).
+Kept for comparison. See tune_threshold_ensemble.py for the ensemble
+equivalent, which sweeps per-source and is usually the better choice.
 
 Usage:
     python tune_threshold.py sessions/ [options]
@@ -45,7 +40,7 @@ from retrain_baseline import (
     load_features, build_feature_matrix, validate_features,
 )
 
-from session_scoring import merge_gsr_hrv, score_merged_row, DEFAULT_MERGE_TOLERANCE_S
+from session_scoring import merge_gsr_hrv, DEFAULT_MERGE_TOLERANCE_S
 
 warnings.filterwarnings("ignore", category=UserWarning)
 
@@ -302,7 +297,7 @@ def main() -> int:
     parser.add_argument("--contaminations", type=str, default="0.005,0.01,0.02,0.05,0.1,0.12,0.15,0.2,0.25",
                         help="Comma-separated list of contamination values")
     parser.add_argument("--threshold-pct", type=float, default=None,
-                        help="Fixed thrshold percentile (default: scales with contamination)")
+                        help="Fixed threshold percentile (default: scales with contamination)")
     parser.add_argument("--save-best", action="store_true",
                         help="Save the model with the best baseline/non-baseline gap")
     parser.add_argument("--out", type=Path, default=Path("models/iforest.pkl"))
