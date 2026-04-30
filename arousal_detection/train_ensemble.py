@@ -66,24 +66,24 @@ warnings.filterwarnings("ignore", category=UserWarning)
 # Feature columns — must match collect_training_data.py output
 # ---------------------------------------------------------------------------
 
-GSR_FEATURES = [
-    ("gsr_scl_mean",     "SCL mean"),
-    ("gsr_scr_count",    "SCR/min"),
-    ("gsr_phasic_std",   "Phasic std"),
-    ("gsr_scr_mean_amp", "SCR amp"),
-]
-
 # GSR_FEATURES = [
-#     ("gsr_scl_mean", "scl mean"),
-#     ("gsr_scr_count", "scr count"),
-#     ("gsr_scr_mean_amp", "scr mean_amp"),
-#     ("gsr_phasic_std", "phasic std"),
-#
-#     # ("gsr_scl_std", "scl std"),
-#     # ("gsr_scr_rise_time", "scr rise_time"),
-#     # ("gsr_scr_recovery_time", "scr recovery_time"),
-#     # ("gsr_phasic_mean", "phasic mean"),
+#     ("gsr_scl_mean",     "SCL mean"),
+#     ("gsr_scr_count",    "SCR/min"),
+#     ("gsr_phasic_std",   "Phasic std"),
+#     ("gsr_scr_mean_amp", "SCR amp"),
 # ]
+
+GSR_FEATURES = [
+    ("gsr_scl_mean", "SCL Mean"),
+    ("gsr_scr_count", "SCR Count/min"),
+    ("gsr_scr_mean_amp", "SCR Mean Amp"),
+    ("gsr_phasic_std", "Phasic Std"),
+
+    ("gsr_scl_std", "SCL Std"),
+    # ("gsr_scr_rise_time", "SCR Rise Time"),
+    # ("gsr_scr_recovery_time", "SCR Recovery Time"),
+    # ("gsr_phasic_mean", "Phasic Mean"),
+]
 
 # HRV_FEATURES = [
 #     ("hrv_hr_mean", "HR mean"),
@@ -93,14 +93,14 @@ GSR_FEATURES = [
 # ]
 
 HRV_FEATURES = [
-    ("hrv_hr_mean", "hr_mean"),
-    ("hrv_hr_std", "hr_std"),
-    ("hrv_hr_min", "hr_min"),
-    ("hrv_hr_max", "hr_max"),
-    ("hrv_rmssd", "rmssd"),
-    ("hrv_sdnn", "sdnn"),
-    ("hrv_pnn50", "pnn50"),
-    ("hrv_mean_rr", "mean_rr"),
+    ("hrv_hr_mean", "HR mean"),
+    ("hrv_hr_std", "HR Std"),
+    ("hrv_hr_min", "HR Min"),
+    ("hrv_hr_max", "HR Max"),
+    ("hrv_rmssd", "RMSSD"),
+    ("hrv_sdnn", "SDNN"),
+    ("hrv_pnn50", "PNN50"),
+    ("hrv_mean_rr", "Mean RR"),
 ]
 
 SOURCES = {

@@ -250,7 +250,7 @@ def plot_sweep(df: pd.DataFrame, out_path: Path) -> None:
 
     fig, axes = plt.subplots(1, len(sources), figsize=(7 * len(sources), 6),
                              squeeze=False)
-    fig.suptitle("Ensemble contamination sweep — per source",
+    fig.suptitle("Ensemble contamination sweep - per source",
                  fontsize=13, fontweight="bold")
 
     BASE, OTHER = "#4C78A8", "#E45756"

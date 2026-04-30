@@ -6,7 +6,7 @@ End-to-end analysis for the arousal-detection results chapter.
 Inputs:
     sessions/      Parent directory of recorded sessions. Each session is
                    labelled by prefix (default: 'baseline' = negative class,
-                   anything else = positive class — but see --positive-prefix).
+                   anything else = positive class - but see --positive-prefix).
     --model        Path to a trained detector (ensemble bundle or .pkl).
 
 Outputs to <out>/ :
@@ -27,7 +27,8 @@ Outputs to <out>/ :
         02_data_summary.csv            per-session row counts, data-quality stats
         02_loso_shifts.csv
         03_metrics.csv                 AUC / PR-AUC / precision@recall / latency
-        03_ablation_metrics.csv        AUC etc. for GSR-only / HRV-only / combined
+        03_ablation_metrics.csv        AUC etc. for GSR / HRV / combined on paired windows
+        03_ablation_full_coverage.csv  AUC etc. on all single-modality windows
         03_per_session.csv             per-session: flag rate, score stats
         03_confusion_at_operating_pt.csv
 
@@ -200,16 +201,16 @@ def score_all_sessions(
                     pair_tolerance_s=30.0,
                     mean_threshold=detector.mean_threshold,
                 )
-                # combined_timeline adds 'paired_with' — harmless extra col
+                # combined_timeline adds 'paired_with' - harmless extra col
         else:
             # Single-source (possibly old merged) model
             if (any(c.startswith("gsr_") for c in detector.feature_cols)
                     and any(c.startswith("hrv_") for c in detector.feature_cols)):
                 scored = score_session_file(csv_path, detector)
-                # Harmonise columns — merge-based returns 'time_s' already
+                # Harmonise columns - merge-based returns 'time_s' already
                 scored["source"] = "merged"
             else:
-                # Per-source single model — use the ensemble-style helper path
+                # Per-source single model - use the ensemble-style helper path
                 raw = pd.read_csv(csv_path)
                 from session_scoring import _score_source_rows
                 src = "gsr" if any(c.startswith("gsr_") for c in detector.feature_cols) else "hrv"
@@ -225,7 +226,7 @@ def score_all_sessions(
         sys.exit("[ERROR] No sessions produced scored windows.")
 
     out = pd.concat(frames, ignore_index=True)
-    # Drop unscored rows — they can't contribute to metrics
+    # Drop unscored rows - they can't contribute to metrics
     before = len(out)
     out = out[out["scored"]].reset_index(drop=True)
     print(f"[SCORE] {len(out)} scored windows "
@@ -263,7 +264,7 @@ def plot_feature_violins(
     n = len(available)
     fig, axes = plt.subplots((n + 3) // 4, 4, figsize=(16, 3.5 * ((n + 3) // 4)))
     axes = axes.flatten()
-    fig.suptitle("Baseline characterisation — feature distributions per session",
+    fig.suptitle("Baseline characterisation - feature distributions per session",
                  fontsize=13, fontweight="bold")
 
     session_names = [s.name for s in sessions]
@@ -316,7 +317,7 @@ def plot_pca_projection(
     """2D PCA of the feature space, coloured by session label class."""
     # Collect per-source matrices, then plot side-by-side
     fig, axes = plt.subplots(1, 2, figsize=(14, 6))
-    fig.suptitle("Baseline characterisation — 2D PCA projection per source",
+    fig.suptitle("Baseline characterisation - 2D PCA projection per source",
                  fontsize=13, fontweight="bold")
 
     for ax, source in zip(axes, ["gsr", "hrv"]):
@@ -447,7 +448,7 @@ def plot_loso_shifts(df: pd.DataFrame, out_path: Path) -> None:
     ax.axvline(0,  color="black", lw=0.8)
     ax.axvline(-1, color=RED, ls="--", lw=1, alpha=0.6, label="−1σ")
     ax.axvline( 1, color=RED, ls="--", lw=1, alpha=0.6)
-    ax.set_xlabel("Shift in mean score when held out (σ units) — "
+    ax.set_xlabel("Shift in mean score when held out (σ units) - "
                   "|shift| > 1σ = distinct from the rest")
     from matplotlib.patches import Patch
     ax.legend(handles=[
@@ -505,7 +506,7 @@ def compute_data_summary(sessions: list[Session]) -> pd.DataFrame:
 
 
 def plot_score_distributions(scored: pd.DataFrame, out_path: Path) -> None:
-    """THE headline plot — baseline score distribution vs aroused overlay."""
+    """THE headline plot - baseline score distribution vs aroused overlay."""
     fig, ax = plt.subplots(figsize=(10, 6))
 
     base = scored[scored["y_true"] == 0]["normalised"].values
@@ -524,8 +525,7 @@ def plot_score_distributions(scored: pd.DataFrame, out_path: Path) -> None:
 
     ax.set_xlabel("Normalised arousal score (0 = deep baseline, 1 = max)")
     ax.set_ylabel("Density")
-    ax.set_title("Score distributions — baseline vs aroused sessions "
-                 "(HEADLINE RESULT)",
+    ax.set_title("Score distributions - baseline vs aroused sessions ",
                  fontsize=12, fontweight="bold")
     ax.legend(fontsize=10)
     ax.grid(True, alpha=0.3)
@@ -551,9 +551,7 @@ def compute_roc_pr(scored: pd.DataFrame) -> dict:
     prec, rec, thr_pr = precision_recall_curve(y, s)
     pr_auc_val = average_precision_score(y, s)
 
-    # Precision @ recall >= 0.8 — pick the highest precision among all
-    # thresholds that still give at least 80% recall. `precision_recall_curve`
-    # returns them sorted by threshold (recall descending), so we scan.
+    # Precision @ recall >= 0.8
     target_recall = 0.8
     eligible = rec >= target_recall
     if eligible.any():
@@ -582,7 +580,7 @@ def plot_roc(metrics: dict, out_path: Path) -> None:
     ax.plot([0, 1], [0, 1], color=GREY, ls="--", lw=1, label="Chance")
     ax.set_xlabel("False positive rate")
     ax.set_ylabel("True positive rate")
-    ax.set_title("ROC curve — arousal classification at window level",
+    ax.set_title("ROC curve - arousal classification at window level",
                  fontsize=12, fontweight="bold")
     ax.legend(loc="lower right", fontsize=10)
     ax.grid(True, alpha=0.3)
@@ -604,7 +602,7 @@ def plot_pr(metrics: dict, out_path: Path) -> None:
                label=f"Base rate ({base_rate:.2f})")
     ax.set_xlabel("Recall")
     ax.set_ylabel("Precision")
-    ax.set_title("Precision–Recall curve — arousal classification",
+    ax.set_title("Precision–Recall curve - arousal classification",
                  fontsize=12, fontweight="bold")
     ax.legend(loc="lower left", fontsize=10)
     ax.grid(True, alpha=0.3)
@@ -615,10 +613,14 @@ def plot_pr(metrics: dict, out_path: Path) -> None:
     print(f"[03] PR → {out_path.name}")
 
 
-# ----- Ablation: train GSR-only, HRV-only, both from baseline ----------
+# ---------------------------------------------------------------------------
+# §5.3 Ablation - uses the trained ensemble sub-models, strict pairing
+# ---------------------------------------------------------------------------
+
 
 def _fit_iforest(X: np.ndarray, contamination: float,
                  n_estimators: int = 200) -> Pipeline:
+    """Used only by LOSO (which needs to retrain on subsets)."""
     pipe = Pipeline([
         ("scaler", StandardScaler()),
         ("iforest", IsolationForest(
@@ -630,165 +632,160 @@ def _fit_iforest(X: np.ndarray, contamination: float,
     return pipe
 
 
-def _normalise_scores(raw: np.ndarray, train_scores: np.ndarray) -> np.ndarray:
-    """Mirror ArousalDetector._normalise_score vectorised."""
-    lo = train_scores.min() - train_scores.std()
-    hi = train_scores.max()
-    if hi == lo:
-        return np.zeros_like(raw)
-    out = (hi - raw) / (hi - lo)
-    return np.clip(out, 0.0, 1.0)
+def _score_with_submodel(
+    X: np.ndarray,
+    sub_model: ArousalDetector,
+) -> tuple[np.ndarray, np.ndarray]:
+    """
+    Return (raw_scores, normalised_scores) from a trained ArousalDetector.
+
+    Uses the sub-model's own pipeline for raw scoring and its own
+    _normalise_score() method for the [0,1] mapping, so the ablation uses
+    the exact same normalisation path as production inference.
+    """
+    raw = sub_model._pipe.score_samples(X)
+    norm = np.array([sub_model._normalise_score(float(r)) for r in raw])
+    return raw, norm
 
 
-def run_ablation(
+def run_ablation_from_trained(
     sessions: list[Session],
-    contamination: float,
-) -> tuple[dict, pd.DataFrame]:
+    detector: EnsembleDetector,
+    pair_tolerance_s: float = 30.0,
+) -> tuple[dict, pd.DataFrame, pd.DataFrame]:
     """
-    Train GSR-only, HRV-only on baseline sessions; score all session windows;
-    compute per-variant ROC/PR and return a metrics dict + long-form scored
-    frame for the 'combined' variant (average of per-source normalised
-    scores on rows where both available).
-    """
-    baselines = [s for s in sessions if not s.is_aroused]
+    Evaluate the already-trained ensemble sub-models three ways on the SAME
+    paired windows:
+      1. GSR-only
+      2. HRV-only
+      3. Combined (mean of the two normalised scores)
 
-    # Train one pipeline per source
-    frames = []
+    Also computes a "full coverage" secondary table where each sub-model is
+    evaluated on ALL of its source's windows (not restricted to paired rows).
+
+    Returns:
+        (ablation_dict, paired_metrics_df, full_coverage_metrics_df)
+    """
+    if detector.gsr is None or detector.hrv is None:
+        print("[ABLATION] Detector missing one sub-model; ablation skipped.")
+        return {}, pd.DataFrame(), pd.DataFrame()
+
+    gsr_model = detector.gsr
+    hrv_model = detector.hrv
+
+    # Use each sub-model's own feature_cols so the ablation uses exactly
+    # the columns the production model was trained on.
+    gsr_cols = gsr_model.feature_cols
+    hrv_cols = hrv_model.feature_cols
+
+    # Collect per-source scored rows
+    gsr_rows_all = []
+    hrv_rows_all = []
+
     for s in sessions:
         df = pd.read_csv(s.dir / "features.csv")
-        df["__session"] = s.name
-        df["__y"]       = int(s.is_aroused)
-        frames.append(df)
-    all_df = pd.concat(frames, ignore_index=True)
 
-    # Baseline-only training frame
-    base_frames = []
-    for s in baselines:
-        df = pd.read_csv(s.dir / "features.csv")
-        df["__session"] = s.name
-        base_frames.append(df)
-    base_df = pd.concat(base_frames, ignore_index=True) if base_frames else pd.DataFrame()
+        # GSR rows
+        g = df[df["source"] == "gsr"].copy()
+        g_avail = [c for c in gsr_cols if c in g.columns]
+        g = g.dropna(subset=g_avail)
+        if not g.empty and g_avail:
+            raw, norm = _score_with_submodel(g[g_avail].values, gsr_model)
+            g = g.assign(
+                raw_score=raw,
+                normalised=norm,
+                __session=s.name,
+                __y=int(s.is_aroused),
+            )
+            gsr_rows_all.append(g)
 
-    variants: dict[str, dict] = {}
+        # HRV rows
+        h = df[df["source"] == "hrv"].copy()
+        h_avail = [c for c in hrv_cols if c in h.columns]
+        h = h.dropna(subset=h_avail)
+        if not h.empty and h_avail:
+            raw, norm = _score_with_submodel(h[h_avail].values, hrv_model)
+            h = h.assign(
+                raw_score=raw,
+                normalised=norm,
+                __session=s.name,
+                __y=int(s.is_aroused),
+            )
+            hrv_rows_all.append(h)
 
-    for source in ("gsr", "hrv"):
-        feature_cols = [c for c, _ in SOURCES[source]]
-        base_rows = base_df[base_df["source"] == source].dropna(subset=feature_cols)
-        if base_rows.empty:
+    if not gsr_rows_all or not hrv_rows_all:
+        print("[ABLATION] No scored rows for one or both sub-models")
+        return {}, pd.DataFrame(), pd.DataFrame()
+
+    gsr_df = pd.concat(gsr_rows_all, ignore_index=True)
+    hrv_df = pd.concat(hrv_rows_all, ignore_index=True)
+
+    # ---- Full-coverage metrics (each source on ALL its own windows) ----
+    full_rows = []
+    for src_name, src_df in [("gsr", gsr_df), ("hrv", hrv_df)]:
+        m = _roc_pr_from(src_df["__y"].values, src_df["normalised"].values)
+        m["variant"] = f"{src_name}_full_coverage"
+        m["n_windows"] = len(src_df)
+        full_rows.append(m)
+    full_coverage = pd.DataFrame(full_rows)
+
+    # ---- Strict pairing for like-for-like comparison ----
+    paired_rows = []
+    for sess_name in gsr_df["__session"].unique():
+        g = (gsr_df[gsr_df["__session"] == sess_name]
+             .sort_values("window_start_time").reset_index(drop=True))
+        h = (hrv_df[hrv_df["__session"] == sess_name]
+             .sort_values("window_start_time").reset_index(drop=True))
+        if g.empty or h.empty:
             continue
 
-        X_train = base_rows[feature_cols].values
-        pipe = _fit_iforest(X_train, contamination=contamination)
-        train_scores = pipe.score_samples(X_train)
-
-        all_rows = all_df[all_df["source"] == source].dropna(subset=feature_cols).copy()
-        raw = pipe.score_samples(all_rows[feature_cols].values)
-        norm = _normalise_scores(raw, train_scores)
-
-        all_rows["raw_score"]   = raw
-        all_rows["normalised"]  = norm
-        all_rows["y_true"]      = all_rows["__y"]
-        variants[source] = {
-            "pipe":          pipe,
-            "train_scores":  train_scores,
-            "scored_rows":   all_rows.reset_index(drop=True),
-        }
-
-    # Build the 'combined' variant = for each time window, if both a GSR and
-    # HRV row exist within 30s in the same session, use the mean of their
-    # normalised scores; otherwise use whichever is present.
-    combined_rows = _build_combined_variant(variants, all_df)
-
-    # Compute metrics for each variant
-    metrics_rows = []
-    for name in ("gsr", "hrv"):
-        if name not in variants:
-            continue
-        v = variants[name]
-        m = _roc_pr_from(v["scored_rows"]["y_true"].values,
-                         v["scored_rows"]["normalised"].values)
-        m["variant"] = name
-        m["n_windows"] = len(v["scored_rows"])
-        metrics_rows.append(m)
-
-    if not combined_rows.empty:
-        m = _roc_pr_from(combined_rows["y_true"].values,
-                         combined_rows["normalised"].values)
-        m["variant"] = "combined"
-        m["n_windows"] = len(combined_rows)
-        metrics_rows.append(m)
-
-    return {
-        "variants":    variants,
-        "combined":    combined_rows,
-        "metrics":     metrics_rows,
-    }, pd.DataFrame(metrics_rows)
-
-
-def _build_combined_variant(variants: dict, all_df: pd.DataFrame) -> pd.DataFrame:
-    """Pair GSR and HRV scored rows within 30s per session, average scores."""
-    if "gsr" not in variants or "hrv" not in variants:
-        # Fall back: whichever is present
-        if "gsr" in variants:
-            return variants["gsr"]["scored_rows"]
-        if "hrv" in variants:
-            return variants["hrv"]["scored_rows"]
-        return pd.DataFrame()
-
-    gsr_rows = variants["gsr"]["scored_rows"]
-    hrv_rows = variants["hrv"]["scored_rows"]
-
-    combined = []
-    for sess_name in pd.concat([gsr_rows["__session"], hrv_rows["__session"]]).unique():
-        g = gsr_rows[gsr_rows["__session"] == sess_name].sort_values("window_start_time")
-        h = hrv_rows[hrv_rows["__session"] == sess_name].sort_values("window_start_time")
-        if g.empty and h.empty:
-            continue
-
-        g_times = g["window_start_time"].values
         h_times = h["window_start_time"].values
         used_h: set[int] = set()
 
         for _, gr in g.iterrows():
-            if h_times.size == 0:
-                combined.append({
-                    "__session":       sess_name,
-                    "window_start_time": gr["window_start_time"],
-                    "normalised":      gr["normalised"],
-                    "y_true":          gr["y_true"],
-                })
+            if len(h_times) == 0:
                 continue
             idx = int(np.argmin(np.abs(h_times - gr["window_start_time"])))
             gap = abs(h_times[idx] - gr["window_start_time"])
-            if gap <= 30.0 and idx not in used_h:
+            if gap <= pair_tolerance_s and idx not in used_h:
                 used_h.add(idx)
                 hr = h.iloc[idx]
-                combined.append({
-                    "__session":       sess_name,
+                paired_rows.append({
+                    "__session": sess_name,
                     "window_start_time": gr["window_start_time"],
-                    "normalised":      (gr["normalised"] + hr["normalised"]) / 2,
-                    "y_true":          gr["y_true"],
-                })
-            else:
-                combined.append({
-                    "__session":       sess_name,
-                    "window_start_time": gr["window_start_time"],
-                    "normalised":      gr["normalised"],
-                    "y_true":          gr["y_true"],
+                    "gsr_normalised": float(gr["normalised"]),
+                    "hrv_normalised": float(hr["normalised"]),
+                    "combined_normalised":
+                        (float(gr["normalised"]) + float(hr["normalised"])) / 2.0,
+                    "y_true": int(gr["__y"]),
                 })
 
-        # Unpaired HRV rows
-        for i, hr in h.reset_index(drop=True).iterrows():
-            if i in used_h:
-                continue
-            combined.append({
-                "__session":       sess_name,
-                "window_start_time": hr["window_start_time"],
-                "normalised":      hr["normalised"],
-                "y_true":          hr["y_true"],
-            })
+    paired = pd.DataFrame(paired_rows)
+    if paired.empty:
+        print("[ABLATION] No paired windows could be built")
+        return {"gsr_df": gsr_df, "hrv_df": hrv_df, "paired": paired}, \
+               pd.DataFrame(), full_coverage
 
-    return pd.DataFrame(combined)
+    # Paired metrics - same N across all three variants
+    paired_rows_metrics = []
+    for variant_name, score_col in [
+        ("gsr",      "gsr_normalised"),
+        ("hrv",      "hrv_normalised"),
+        ("combined", "combined_normalised"),
+    ]:
+        m = _roc_pr_from(paired["y_true"].values, paired[score_col].values)
+        m["variant"] = variant_name
+        m["n_windows"] = len(paired)
+        paired_rows_metrics.append(m)
+
+    paired_metrics = pd.DataFrame(paired_rows_metrics)
+
+    ablation = {
+        "gsr_df":    gsr_df,
+        "hrv_df":    hrv_df,
+        "paired":    paired,
+    }
+    return ablation, paired_metrics, full_coverage
 
 
 def _roc_pr_from(y, s) -> dict:
@@ -806,22 +803,22 @@ def _roc_pr_from(y, s) -> dict:
 
 
 def plot_ablation_roc(ablation: dict, out_path: Path) -> None:
+    paired = ablation.get("paired")
+    if paired is None or paired.empty:
+        print("[03] Ablation ROC skipped (no paired windows)")
+        return
+
     fig, ax = plt.subplots(figsize=(8, 7))
     colours = {"gsr": BLUE, "hrv": ORANGE, "combined": GREEN}
+    score_cols = {
+        "gsr":      "gsr_normalised",
+        "hrv":      "hrv_normalised",
+        "combined": "combined_normalised",
+    }
 
+    y = paired["y_true"].values
     for name, colour in colours.items():
-        if name == "combined":
-            df = ablation["combined"]
-            if df.empty:
-                continue
-            y = df["y_true"].values
-            s = df["normalised"].values
-        else:
-            if name not in ablation["variants"]:
-                continue
-            rows = ablation["variants"][name]["scored_rows"]
-            y = rows["y_true"].values
-            s = rows["normalised"].values
+        s = paired[score_cols[name]].values
         if len(np.unique(y)) < 2:
             continue
         fpr, tpr, _ = roc_curve(y, s)
@@ -832,7 +829,8 @@ def plot_ablation_roc(ablation: dict, out_path: Path) -> None:
     ax.plot([0, 1], [0, 1], color=GREY, ls="--", lw=1, label="Chance")
     ax.set_xlabel("False positive rate")
     ax.set_ylabel("True positive rate")
-    ax.set_title("Ablation — GSR-only vs HRV-only vs combined",
+    ax.set_title(f"Ablation on paired windows (n={len(paired)}) - "
+                 "GSR / HRV / combined",
                  fontsize=12, fontweight="bold")
     ax.legend(loc="lower right", fontsize=10)
     ax.grid(True, alpha=0.3)
@@ -873,7 +871,7 @@ def plot_threshold_sweep(
                label=f"Operating threshold ({operating_threshold:.2f})")
     ax.set_xlabel("Decision threshold (normalised score)")
     ax.set_ylabel("Metric value")
-    ax.set_title("Threshold sweep — precision / recall / F1",
+    ax.set_title("Threshold sweep - precision / recall / F1",
                  fontsize=12, fontweight="bold")
     ax.legend(fontsize=10)
     ax.grid(True, alpha=0.3)
@@ -885,7 +883,7 @@ def plot_threshold_sweep(
 
 
 def plot_per_session(scored: pd.DataFrame, out_path: Path) -> pd.DataFrame:
-    """Per-session flag rate and mean score — grouped baseline vs aroused."""
+    """Per-session flag rate and mean score - grouped baseline vs aroused."""
     rows = []
     for (sess, label, y), sub in scored.groupby(["session", "label", "y_true"]):
         rows.append({
@@ -944,7 +942,7 @@ def plot_hero_timeseries(scored: pd.DataFrame, out_path: Path) -> None:
     if positives.empty:
         return
 
-    # Pick the positive session with the highest flag rate — the model's
+    # Pick the positive session with the highest flag rate - the model's
     # best answer. If you want a specific session, edit here.
     per_sess = (positives.groupby("session")["is_aroused"].mean()
                          .sort_values(ascending=False))
@@ -955,7 +953,7 @@ def plot_hero_timeseries(scored: pd.DataFrame, out_path: Path) -> None:
     sub["t_min"] = sub["time_s"] / 60.0
 
     fig, ax = plt.subplots(figsize=(13, 6))
-    fig.suptitle(f"Hero timeseries — {target}  (label: {sub['label'].iloc[0]})",
+    fig.suptitle(f"Hero timeseries - {target}  (label: {sub['label'].iloc[0]})",
                  fontsize=12, fontweight="bold")
 
     for src, colour in (("gsr", BLUE), ("hrv", ORANGE), ("merged", PURPLE)):
@@ -1090,7 +1088,7 @@ def plot_latency(stats: dict, out_path: Path) -> None:
                    label=f"{label} = {val:.2f} ms")
     ax.set_xlabel("score() call latency (ms)")
     ax.set_ylabel("Count")
-    ax.set_title(f"Inference latency — {stats['n_calls']} calls",
+    ax.set_title(f"Inference latency - {stats['n_calls']} calls",
                  fontsize=12, fontweight="bold")
     ax.legend(fontsize=10)
     ax.grid(True, alpha=0.3)
@@ -1112,6 +1110,7 @@ def write_report(
     detector,
     metrics: dict,
     ablation_metrics: pd.DataFrame,
+    full_coverage_metrics: pd.DataFrame,
     loso: pd.DataFrame,
     latency: dict,
     operating_threshold: float,
@@ -1125,13 +1124,13 @@ def write_report(
     n_base = sum(1 for s in sessions if not s.is_aroused)
     n_pos  = sum(1 for s in sessions if s.is_aroused)
 
-    lines.append(f"# Arousal detection — results summary")
+    lines.append(f"# Arousal detection - results summary")
     lines.append(f"")
     lines.append(f"_Generated {datetime.now().isoformat(timespec='seconds')}_")
     lines.append(f"")
     lines.append(f"## Setup")
     lines.append(f"- Detector: **{'ensemble (' + combine_mode + ')' if is_ensemble else 'single-source / merged'}**")
-    lines.append(f"- Sessions: **{len(sessions)}** total — {n_base} baseline, {n_pos} aroused")
+    lines.append(f"- Sessions: **{len(sessions)}** total - {n_base} baseline, {n_pos} aroused")
     lines.append(f"- Scored windows: **{len(scored)}**")
     lines.append(f"")
     lines.append(f"## §5.3 Headline metrics")
@@ -1148,8 +1147,12 @@ def write_report(
     lines.append(f"![ROC](figures/03_roc_curve.png)")
     lines.append(f"![PR](figures/03_pr_curve.png)")
     lines.append(f"")
-    lines.append(f"## §5.3 Ablation (trained on baseline only)")
+    lines.append(f"## §5.3 Ablation (paired windows - like-for-like comparison)")
     if not ablation_metrics.empty:
+        lines.append(f"")
+        lines.append(f"All three variants evaluated on the IDENTICAL set of "
+                     f"paired windows where both GSR and HRV had valid data "
+                     f"within 30 seconds.")
         lines.append(f"")
         lines.append(ablation_metrics[["variant", "n_windows", "roc_auc",
                                        "pr_auc", "precision_at_recall_0p8"]]
@@ -1157,6 +1160,18 @@ def write_report(
         lines.append(f"")
     lines.append(f"![Ablation ROC](figures/03_ablation_roc.png)")
     lines.append(f"")
+    if not full_coverage_metrics.empty:
+        lines.append(f"### §5.3 Full-coverage per-source performance (secondary)")
+        lines.append(f"")
+        lines.append(f"Each sub-model evaluated on ALL of its own source's "
+                     f"windows (including single-modality windows not in the "
+                     f"paired set above). Useful for discussing graceful "
+                     f"degradation when only one sensor is available.")
+        lines.append(f"")
+        lines.append(full_coverage_metrics[["variant", "n_windows", "roc_auc",
+                                            "pr_auc", "precision_at_recall_0p8"]]
+                     .to_markdown(index=False, floatfmt=".3f"))
+        lines.append(f"")
     lines.append(f"## §5.3 Per-session breakdown")
     lines.append(per_session.to_markdown(index=False, floatfmt=".3f"))
     lines.append(f"")
@@ -1199,11 +1214,11 @@ def write_report(
                      f"at recall = 0.8.")
     if not ablation_metrics.empty:
         row = ablation_metrics.set_index("variant")
-        if "combined" in row.index and "gsr" in row.index and "hrv" in row.index:
-            lines.append(f"- Combining modalities improves ROC-AUC from "
-                         f"{row.loc['gsr', 'roc_auc']:.3f} (GSR-only) and "
-                         f"{row.loc['hrv', 'roc_auc']:.3f} (HRV-only) "
-                         f"to {row.loc['combined', 'roc_auc']:.3f}.")
+        if all(k in row.index for k in ("gsr", "hrv", "combined")):
+            lines.append(f"- On paired windows (n={int(row.loc['gsr', 'n_windows'])}), "
+                         f"combined ROC-AUC = {row.loc['combined', 'roc_auc']:.3f} "
+                         f"vs {row.loc['gsr', 'roc_auc']:.3f} (GSR-only) "
+                         f"and {row.loc['hrv', 'roc_auc']:.3f} (HRV-only).")
     if latency:
         lines.append(f"- Mean inference latency: {latency['mean_ms']:.1f} ms "
                      f"(p95 {latency['p95_ms']:.1f} ms).")
@@ -1234,8 +1249,8 @@ def main() -> int:
                    help="Ensemble combination mode (default: any)")
     p.add_argument("--operating-threshold", type=float, default=0.5,
                    help="Normalised score threshold for confusion matrix (default: 0.5)")
-    p.add_argument("--ablation-contamination", type=float, default=0.05,
-                   help="Contamination for ablation models trained from scratch")
+    p.add_argument("--pair-tolerance-s", type=float, default=30.0,
+                   help="Max time gap (s) to pair GSR and HRV windows in ablation")
     p.add_argument("--latency-calls", type=int, default=1000)
     args = p.parse_args()
 
@@ -1287,12 +1302,16 @@ def main() -> int:
         out / "tables/03_metrics.csv", index=False,
     )
 
-    # Ablation (trains its own models)
-    print("\n=== §5.3 Ablation ===")
-    ablation, ablation_metrics = run_ablation(
-        sessions, contamination=args.ablation_contamination,
+    # Ablation - uses the ALREADY-TRAINED sub-models, strict pairing
+    print("\n=== §5.3 Ablation (from trained ensemble) ===")
+    ablation, ablation_metrics, full_coverage_metrics = run_ablation_from_trained(
+        sessions, detector, pair_tolerance_s=args.pair_tolerance_s,
     )
-    ablation_metrics.to_csv(out / "tables/03_ablation_metrics.csv", index=False)
+    if not ablation_metrics.empty:
+        ablation_metrics.to_csv(out / "tables/03_ablation_metrics.csv", index=False)
+    if not full_coverage_metrics.empty:
+        full_coverage_metrics.to_csv(out / "tables/03_ablation_full_coverage.csv",
+                                     index=False)
     plot_ablation_roc(ablation, out / "figures/03_ablation_roc.png")
 
     # Threshold sweep + confusion
@@ -1325,7 +1344,8 @@ def main() -> int:
         "n_scored_windows":   int(len(scored)),
         "combine_mode":       args.combine_mode if isinstance(detector, EnsembleDetector) else "single",
         "main_metrics":       metrics_compact,
-        "ablation":           ablation_metrics.to_dict(orient="records"),
+        "ablation_paired":    ablation_metrics.to_dict(orient="records") if not ablation_metrics.empty else [],
+        "ablation_full_coverage": full_coverage_metrics.to_dict(orient="records") if not full_coverage_metrics.empty else [],
         "operating_threshold": args.operating_threshold,
         "operating_confusion": cm_df.iloc[0].to_dict(),
         "latency":            {k: v for k, v in latency.items()
@@ -1342,8 +1362,8 @@ def main() -> int:
     try:
         write_report(
             out, sessions, scored, detector, metrics, ablation_metrics,
-            loso, latency, args.operating_threshold, per_session,
-            args.combine_mode,
+            full_coverage_metrics, loso, latency, args.operating_threshold,
+            per_session, args.combine_mode,
         )
     except Exception as e:
         # to_markdown needs tabulate; report is a nice-to-have, don't die for it
