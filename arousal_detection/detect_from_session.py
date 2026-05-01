@@ -18,20 +18,10 @@ from session_scoring import (
 )
 
 
-# ---------------------------------------------------------------------------
-# Formatting
-# ---------------------------------------------------------------------------
-
-
 def format_time(seconds: float) -> str:
     m = int(seconds) // 60
     s = int(seconds) % 60
     return f"{m:d}:{s:02d}"
-
-
-# ---------------------------------------------------------------------------
-# Output
-# ---------------------------------------------------------------------------
 
 
 def print_ensemble_report(
@@ -45,13 +35,18 @@ def print_ensemble_report(
     by_source = scored.groupby("source").size().to_dict()
 
     print()
-    print(f"Scored rows : total={len(scored)} "
-          f"({', '.join(f'{s}={n}' for s, n in by_source.items())})")
+    print(
+        f"Scored rows : total={len(scored)} "
+        f"({', '.join(f'{s}={n}' for s, n in by_source.items())})"
+    )
     print(f"Flagged rows: {int(combined['is_aroused'].sum())}  (mode='{mode}')")
     print("-" * 78)
 
-    hits = combined if show_all else combined[combined["is_aroused"]
-                                              & (combined["normalised"] >= min_score)]
+    hits = (
+        combined
+        if show_all
+        else combined[combined["is_aroused"] & (combined["normalised"] >= min_score)]
+    )
 
     if hits.empty:
         print("No rows matched.")
@@ -65,10 +60,15 @@ def print_ensemble_report(
 
     for _, r in hits.sort_values("time_s").iterrows():
         flag = "AROUSED" if r["is_aroused"] else "baseline"
-        pair = format_time(r["paired_with"]) if r.get("paired_with") == r.get("paired_with") else "—"
-        # ^ NaN check (NaN != NaN)
-        print(f"{format_time(r['time_s']):>7}  {r['source']:<4}  "
-              f"{r['score']:>8.4f}  {r['normalised']:>5.2f}  {pair:>6}  {flag}")
+        pair = (
+            format_time(r["paired_with"])
+            if r.get("paired_with") == r.get("paired_with")
+            else " "
+        )
+        print(
+            f"{format_time(r['time_s']):>7}  {r['source']:<4}  "
+            f"{r['score']:>8.4f}  {r['normalised']:>5.2f}  {pair:>6}  {flag}"
+        )
 
     if not show_all:
         print()
@@ -76,8 +76,10 @@ def print_ensemble_report(
         print()
         top = hits.nlargest(min(5, len(hits)), "normalised")
         for _, r in top.iterrows():
-            print(f"  {format_time(r['time_s']):>7}  {r['source']:<4}  "
-                  f"norm={r['normalised']:.2f}  score={r['score']:.4f}")
+            print(
+                f"  {format_time(r['time_s']):>7}  {r['source']:<4}  "
+                f"norm={r['normalised']:.2f}  score={r['score']:.4f}"
+            )
 
 
 def print_single_source_report(
@@ -87,22 +89,26 @@ def print_single_source_report(
     is_merged_model: bool,
 ) -> None:
     """Report shape for the merge-based / single-source case."""
-    total   = len(results)
-    scored  = int(results["scored"].sum())
+    total = len(results)
+    scored = int(results["scored"].sum())
     skipped = total - scored
     aroused = int(results["is_aroused"].sum())
 
     print()
-    print(f"Rows    : {total} total | {scored} scored | "
-          f"{aroused} flagged | {skipped} skipped")
+    print(
+        f"Rows    : {total} total | {scored} scored | "
+        f"{aroused} flagged | {skipped} skipped"
+    )
     print("-" * 78)
 
     if show_all:
         hits = results[results["scored"]]
     else:
-        hits = results[(results["scored"])
-                       & (results["is_aroused"])
-                       & (results["normalised"] >= min_score)]
+        hits = results[
+            (results["scored"])
+            & (results["is_aroused"])
+            & (results["normalised"] >= min_score)
+        ]
 
     if hits.empty:
         print("No rows matched.")
@@ -120,13 +126,20 @@ def print_single_source_report(
     for _, r in hits.sort_values("time_s").iterrows():
         flag = "AROUSED" if r["is_aroused"] else "baseline"
         if is_merged_model:
-            gap = (f"{r['match_gap_s']:.0f}s"
-                   if r.get("match_gap_s") == r.get("match_gap_s") else "—")
-            print(f"{format_time(r['time_s']):>7}  {gap:>5}  "
-                  f"{r['score']:>8.4f}  {r['normalised']:>5.2f}  {flag}")
+            gap = (
+                f"{r['match_gap_s']:.0f}s"
+                if r.get("match_gap_s") == r.get("match_gap_s")
+                else " "
+            )
+            print(
+                f"{format_time(r['time_s']):>7}  {gap:>5}  "
+                f"{r['score']:>8.4f}  {r['normalised']:>5.2f}  {flag}"
+            )
         else:
-            print(f"{format_time(r['time_s']):>7}  "
-                  f"{r['score']:>8.4f}  {r['normalised']:>5.2f}  {flag}")
+            print(
+                f"{format_time(r['time_s']):>7}  "
+                f"{r['score']:>8.4f}  {r['normalised']:>5.2f}  {flag}"
+            )
 
     if not show_all:
         print()
@@ -134,31 +147,45 @@ def print_single_source_report(
         print()
         top = hits.nlargest(min(5, len(hits)), "normalised")
         for _, r in top.iterrows():
-            print(f"  {format_time(r['time_s']):>7}  "
-                  f"norm={r['normalised']:.2f}  score={r['score']:.4f}")
-
-
-# ---------------------------------------------------------------------------
-# Main
-# ---------------------------------------------------------------------------
+            print(
+                f"  {format_time(r['time_s']):>7}  "
+                f"norm={r['normalised']:.2f}  score={r['score']:.4f}"
+            )
 
 
 def main() -> int:
     p = argparse.ArgumentParser(
-        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter,
+        description=__doc__,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     p.add_argument("session_dir", type=Path)
     p.add_argument("--model", type=Path, required=True)
     p.add_argument("--min-score", type=float, default=0.0)
     p.add_argument("--all", action="store_true")
-    p.add_argument("--combine-mode", choices=("any", "all", "mean"), default="any",
-                   help="Ensemble combination mode (default: any)")
-    p.add_argument("--mean-threshold", type=float, default=None,
-                   help="Ensemble 'mean' mode threshold override")
-    p.add_argument("--pair-tolerance", type=float, default=30.0,
-                   help="Seconds between GSR/HRV rows to consider paired (all/mean)")
-    p.add_argument("--tolerance", type=float, default=DEFAULT_MERGE_TOLERANCE_S,
-                   help="Merge-based single-source model only")
+    p.add_argument(
+        "--combine-mode",
+        choices=("any", "all", "mean"),
+        default="any",
+        help="Ensemble combination mode (default: any)",
+    )
+    p.add_argument(
+        "--mean-threshold",
+        type=float,
+        default=None,
+        help="Ensemble 'mean' mode threshold override",
+    )
+    p.add_argument(
+        "--pair-tolerance",
+        type=float,
+        default=30.0,
+        help="Seconds between GSR/HRV rows to consider paired (all/mean)",
+    )
+    p.add_argument(
+        "--tolerance",
+        type=float,
+        default=DEFAULT_MERGE_TOLERANCE_S,
+        help="Merge-based single-source model only",
+    )
     args = p.parse_args()
 
     csv_path = args.session_dir / "features.csv"
@@ -183,16 +210,19 @@ def main() -> int:
             results,
             mode=args.combine_mode,
             pair_tolerance_s=args.pair_tolerance,
-            mean_threshold=(args.mean_threshold
-                            if args.mean_threshold is not None
-                            else detector.mean_threshold),
+            mean_threshold=(
+                args.mean_threshold
+                if args.mean_threshold is not None
+                else detector.mean_threshold
+            ),
         )
-        print_ensemble_report(results, combined, args.combine_mode,
-                              args.min_score, args.all)
+        print_ensemble_report(
+            results, combined, args.combine_mode, args.min_score, args.all
+        )
     else:
-        # ArousalDetector — decide whether it's a merged or single-source
-        is_merged = (any(c.startswith("gsr_") for c in detector.feature_cols)
-                     and any(c.startswith("hrv_") for c in detector.feature_cols))
+        is_merged = any(c.startswith("gsr_") for c in detector.feature_cols) and any(
+            c.startswith("hrv_") for c in detector.feature_cols
+        )
         kind = "single (merged)" if is_merged else f"single ({detector.source})"
         print(f"Mode    : {kind}")
         if is_merged:

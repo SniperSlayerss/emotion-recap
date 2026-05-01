@@ -219,7 +219,7 @@ def plot_consistency(df, out_dir):
     )
     fig, ax = plt.subplots(figsize=(8, 5))
     sns.barplot(data=cv_df, x="prompt_id", y="cv", ax=ax, color="#8172B2")
-    ax.set_title("Output-length consistency (P3 excluded — single-token output)")
+    ax.set_title("Output-length consistency (P3 excluded single-token output)")
     ax.set_ylabel("Coefficient of variation (tokens)")
     ax.set_xlabel("Prompt")
     ax.tick_params(axis="x", rotation=20)
@@ -327,7 +327,7 @@ def plot_valence(merged, out_dir):
 
 def plot_intensity(df, labels, out_dir):
     if "intensity" not in labels.columns:
-        print("No intensity column in labels — skipping intensity plot.")
+        print("No intensity column in labels skipping intensity plot.")
         return None
     int_sub = (
         df[df.prompt_id == "P3_intensity_rating"]
@@ -335,7 +335,7 @@ def plot_intensity(df, labels, out_dir):
         .dropna(subset=["pred_intensity", "intensity"])
     )
     if int_sub.empty:
-        print("No matched P3 + intensity rows — skipping intensity plot.")
+        print("No matched P3 + intensity rows skipping intensity plot.")
         return None
 
     mae = mean_absolute_error(int_sub["intensity"], int_sub["pred_intensity"])

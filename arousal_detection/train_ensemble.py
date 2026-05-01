@@ -22,10 +22,6 @@ from sklearn.preprocessing import StandardScaler
 warnings.filterwarnings("ignore", category=UserWarning)
 
 
-# ---------------------------------------------------------------------------
-# Feature columns
-# ---------------------------------------------------------------------------
-
 # GSR_FEATURES = [
 #     ("gsr_scl_mean",     "SCL mean"),
 #     ("gsr_scr_count",    "SCR/min"),
@@ -38,7 +34,6 @@ GSR_FEATURES = [
     ("gsr_scr_count", "SCR Count/min"),
     ("gsr_scr_mean_amp", "SCR Mean Amp"),
     ("gsr_phasic_std", "Phasic Std"),
-
     ("gsr_scl_std", "SCL Std"),
     # ("gsr_scr_rise_time", "SCR Rise Time"),
     # ("gsr_scr_recovery_time", "SCR Recovery Time"),
@@ -67,11 +62,6 @@ SOURCES = {
     "gsr": GSR_FEATURES,
     "hrv": HRV_FEATURES,
 }
-
-
-# ---------------------------------------------------------------------------
-# Session discovery + loading
-# ---------------------------------------------------------------------------
 
 
 def find_sessions(
@@ -150,11 +140,6 @@ def load_features(session_dirs: list[Path]) -> pd.DataFrame:
     return pd.concat(frames, ignore_index=True)
 
 
-# ---------------------------------------------------------------------------
-# Per-source training
-# ---------------------------------------------------------------------------
-
-
 def build_source_matrix(
     df_all: pd.DataFrame,
     source: str,
@@ -174,7 +159,6 @@ def build_source_matrix(
     if rows.empty:
         return (np.empty((0, 0)), feature_cols, feature_names, np.array([]))
 
-    # Keep only feature columns that are actually present
     available = [c for c in feature_cols if c in rows.columns]
     missing = [c for c in feature_cols if c not in rows.columns]
     if missing:
@@ -194,7 +178,6 @@ def build_source_matrix(
         rows["__session__"].values if "__session__" in rows.columns else np.array([])
     )
 
-    # Preserve the order of the canonical definition
     sel_feature_names = [feature_names[feature_cols.index(c)] for c in available]
     return X, available, sel_feature_names, sessions
 
@@ -228,11 +211,6 @@ def compute_threshold(pipe: Pipeline, X: np.ndarray, percentile: float) -> float
     return float(np.percentile(scores, percentile))
 
 
-# ---------------------------------------------------------------------------
-# Diagnostics
-# ---------------------------------------------------------------------------
-
-
 BLUE, RED, GREEN = "#4C78A8", "#E45756", "#54A24B"
 
 
@@ -255,7 +233,6 @@ def plot_source_report(
         fontweight="bold",
     )
 
-    # 1. Score distribution
     ax = axes[0]
     ax.hist(scores, bins=40, color=BLUE, alpha=0.8, edgecolor="white")
     ax.axvline(
@@ -270,7 +247,6 @@ def plot_source_report(
     ax.legend(fontsize=8)
     ax.grid(True, alpha=0.3)
 
-    # 2. Feature means: inliers vs outliers
     ax = axes[1]
     inlier_means = (
         X[is_inlier].mean(axis=0) if is_inlier.any() else np.zeros(X.shape[1])
@@ -289,7 +265,6 @@ def plot_source_report(
     ax.legend(fontsize=8)
     ax.grid(True, alpha=0.3, axis="y")
 
-    # 3. Score trace
     ax = axes[2]
     ax.plot(scores, lw=0.8, color=BLUE, alpha=0.8)
     ax.axhline(threshold, color=RED, ls="--", lw=1.2, label="Threshold")
@@ -342,11 +317,6 @@ def plot_ensemble_report(
     print(f"[ENSEMBLE] Combined report saved: {out_path}")
 
 
-# ---------------------------------------------------------------------------
-# Training a single source end-to-end
-# ---------------------------------------------------------------------------
-
-
 def train_one_source(
     df_all: pd.DataFrame,
     source: str,
@@ -367,7 +337,6 @@ def train_one_source(
         print(f"[{source.upper()}] Only {X.shape[0]} window(s)")
         return None
 
-
     pipe = train_pipeline(X, contamination=contamination, n_estimators=n_estimators)
     threshold = compute_threshold(pipe, X, percentile=threshold_pct)
     scores = pipe.score_samples(X)
@@ -385,7 +354,6 @@ def train_one_source(
         f"[{source.upper()}]   Score range   : [{scores.min():.4f}, {scores.max():.4f}]"
     )
 
-    # Save model
     model_path = out_dir / f"{source}.pkl"
     meta_path = out_dir / f"{source}_meta.json"
     report_path = out_dir / f"{source}_report.png"
@@ -424,6 +392,7 @@ def train_one_source(
         "n_windows": int(X.shape[0]),
     }
 
+
 def main() -> int:
     p = argparse.ArgumentParser(
         description=__doc__,
@@ -455,7 +424,6 @@ def main() -> int:
     p.add_argument("--dry-run", action="store_true")
     args = p.parse_args()
 
-    # Discover sessions
     sessions = find_sessions(args.parent, args.label, args.label_prefix)
     if not sessions:
         filters = [
@@ -476,7 +444,6 @@ def main() -> int:
     print(f"\n[LOAD] Total raw rows across sessions: {len(df_all)}")
     session_list = [s.name for s in sessions]
 
-    # Train each source independently
     per_source = {}
     for source, contamination, threshold_pct in (
         ("gsr", args.gsr_contamination, args.gsr_threshold_pct),
@@ -499,7 +466,6 @@ def main() -> int:
             "[ERROR] No sub-models were trained (insufficient data for both sources)."
         )
 
-    # Write manifest
     manifest = {
         "type": "ensemble",
         "combine_mode": args.combine_mode,

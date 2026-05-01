@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Optional
 
 import matplotlib
+
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
@@ -27,29 +28,30 @@ from train_ensemble import (
 warnings.filterwarnings("ignore", category=UserWarning)
 
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-
 def all_session_dirs(parent: Path) -> list[Path]:
     return sorted(
-        d for d in parent.iterdir()
-        if d.is_dir() and (d / "features.csv").exists()
+        d for d in parent.iterdir() if d.is_dir() and (d / "features.csv").exists()
     )
 
 
-def train_pipeline(X: np.ndarray, contamination: float, n_estimators: int = 200) -> Pipeline:
-    pipe = Pipeline([
-        ("scaler", StandardScaler()),
-        ("iforest", IsolationForest(
-            n_estimators=n_estimators,
-            contamination=contamination,
-            max_samples="auto",
-            random_state=42,
-            n_jobs=-1,
-        )),
-    ])
+def train_pipeline(
+    X: np.ndarray, contamination: float, n_estimators: int = 200
+) -> Pipeline:
+    pipe = Pipeline(
+        [
+            ("scaler", StandardScaler()),
+            (
+                "iforest",
+                IsolationForest(
+                    n_estimators=n_estimators,
+                    contamination=contamination,
+                    max_samples="auto",
+                    random_state=42,
+                    n_jobs=-1,
+                ),
+            ),
+        ]
+    )
     pipe.fit(X)
     return pipe
 
@@ -80,11 +82,6 @@ def score_session_source(
     return int((scores < threshold).sum()), len(rows)
 
 
-# ---------------------------------------------------------------------------
-# Sweep
-# ---------------------------------------------------------------------------
-
-
 def run_sweep(
     parent: Path,
     baseline_prefix: str,
@@ -98,7 +95,6 @@ def run_sweep(
 
     df_train = load_features(baseline_dirs)
 
-    # Build one training matrix per source up front
     train_matrices = {}
     for source in SOURCES:
         X, feature_cols, _names, _ = build_source_matrix(df_train, source)
@@ -106,12 +102,13 @@ def run_sweep(
             print(f"[SWEEP] Skipping {source}: too few training windows ({X.shape[0]})")
             continue
         train_matrices[source] = {"X": X, "feature_cols": feature_cols}
-        print(f"[SWEEP] {source.upper()} training: {X.shape[0]} windows {X.shape[1]} features")
+        print(
+            f"[SWEEP] {source.upper()} training: {X.shape[0]} windows {X.shape[1]} features"
+        )
 
     if not train_matrices:
         sys.exit("[ERROR] No source had enough baseline data to train.")
 
-    # Score every session against each (contamination, source) combo
     all_dirs = all_session_dirs(parent)
     rows = []
 
@@ -127,27 +124,28 @@ def run_sweep(
                 label = _read_label(d) or "?"
                 is_base = label.startswith(baseline_prefix)
                 n_flag, n_tot = score_session_source(
-                    pipe, d, source, threshold, data["feature_cols"],
+                    pipe,
+                    d,
+                    source,
+                    threshold,
+                    data["feature_cols"],
                 )
                 rate = n_flag / n_tot if n_tot else 0.0
-                rows.append({
-                    "contamination": c,
-                    "source":        source,
-                    "threshold":     threshold,
-                    "session":       d.name,
-                    "label":         label,
-                    "is_baseline":   is_base,
-                    "n_flagged":     n_flag,
-                    "n_total":       n_tot,
-                    "flag_rate":     rate,
-                })
+                rows.append(
+                    {
+                        "contamination": c,
+                        "source": source,
+                        "threshold": threshold,
+                        "session": d.name,
+                        "label": label,
+                        "is_baseline": is_base,
+                        "n_flagged": n_flag,
+                        "n_total": n_tot,
+                        "flag_rate": rate,
+                    }
+                )
 
     return pd.DataFrame(rows)
-
-
-# ---------------------------------------------------------------------------
-# Reporting
-# ---------------------------------------------------------------------------
 
 
 def print_table(df: pd.DataFrame) -> None:
@@ -178,78 +176,131 @@ def print_table(df: pd.DataFrame) -> None:
                 line += f"{r.iloc[0] * 100:>7.1f} " if not r.empty else "    --- "
             print(line)
 
-        # Mean / gap row
         print("-" * len(header))
-        base_means    = [sub[(sub.contamination == c) & sub.is_baseline]["flag_rate"].mean() * 100
-                         for c in contaminations]
-        nonbase_means = [sub[(sub.contamination == c) & ~sub.is_baseline]["flag_rate"].mean() * 100
-                         for c in contaminations]
+        base_means = [
+            sub[(sub.contamination == c) & sub.is_baseline]["flag_rate"].mean() * 100
+            for c in contaminations
+        ]
+        nonbase_means = [
+            sub[(sub.contamination == c) & ~sub.is_baseline]["flag_rate"].mean() * 100
+            for c in contaminations
+        ]
         gaps = [n - b for b, n in zip(base_means, nonbase_means)]
 
-        print(f"{'mean BASELINE':<44} {'':<22} {'':<6} " +
-              "".join(f"{v:>7.1f} " for v in base_means))
-        print(f"{'mean NON-BASELINE':<44} {'':<22} {'':<6} " +
-              "".join(f"{v:>7.1f} " for v in nonbase_means))
-        print(f"{'GAP (non − base)':<44} {'':<22} {'':<6} " +
-              "".join(f"{v:>+7.1f} " for v in gaps))
+        print(
+            f"{'mean BASELINE':<44} {'':<22} {'':<6} "
+            + "".join(f"{v:>7.1f} " for v in base_means)
+        )
+        print(
+            f"{'mean NON-BASELINE':<44} {'':<22} {'':<6} "
+            + "".join(f"{v:>7.1f} " for v in nonbase_means)
+        )
+        print(
+            f"{'GAP (non - base)':<44} {'':<22} {'':<6} "
+            + "".join(f"{v:>+7.1f} " for v in gaps)
+        )
         print("=" * 110)
 
-    # Recommend per source
     MAX_BASELINE_RATE = 10.0
-    MIN_GAP           = 10.0
+    MIN_GAP = 10.0
     print("\n[RECOMMEND]")
     for source in sources:
         sub = df[df["source"] == source]
-        base_means    = [sub[(sub.contamination == c) & sub.is_baseline]["flag_rate"].mean() * 100
-                         for c in contaminations]
-        nonbase_means = [sub[(sub.contamination == c) & ~sub.is_baseline]["flag_rate"].mean() * 100
-                         for c in contaminations]
+        base_means = [
+            sub[(sub.contamination == c) & sub.is_baseline]["flag_rate"].mean() * 100
+            for c in contaminations
+        ]
+        nonbase_means = [
+            sub[(sub.contamination == c) & ~sub.is_baseline]["flag_rate"].mean() * 100
+            for c in contaminations
+        ]
         gaps = [n - b for b, n in zip(base_means, nonbase_means)]
 
-        valid = [(c, b, n, g) for c, b, n, g
-                 in zip(contaminations, base_means, nonbase_means, gaps)
-                 if b <= MAX_BASELINE_RATE]
+        valid = [
+            (c, b, n, g)
+            for c, b, n, g in zip(contaminations, base_means, nonbase_means, gaps)
+            if b <= MAX_BASELINE_RATE
+        ]
 
         if not valid:
-            print(f"    {source.upper()}: no contamination keeps baseline below "
-                  f"{MAX_BASELINE_RATE}%. Try cleaner baselines or fewer features.")
+            print(
+                f"    {source.upper()}: no contamination keeps baseline below "
+                f"{MAX_BASELINE_RATE}%. Try cleaner baselines or fewer features."
+            )
             continue
 
         best_c, best_b, best_n, best_g = max(valid, key=lambda r: r[3])
-        note = "" if best_g >= MIN_GAP else "  (gap small, features may not discriminate)"
-        print(f"    {source.upper()}: best c={best_c} "
-              f"(baseline {best_b:.1f}%, non-baseline {best_n:.1f}%, "
-              f"gap +{best_g:.1f} pts){note}")
+        note = (
+            "" if best_g >= MIN_GAP else "  (gap small, features may not discriminate)"
+        )
+        print(
+            f"    {source.upper()}: best c={best_c} "
+            f"(baseline {best_b:.1f}%, non-baseline {best_n:.1f}%, "
+            f"gap +{best_g:.1f} pts){note}"
+        )
 
 
 def plot_sweep(df: pd.DataFrame, out_path: Path) -> None:
     contaminations = sorted(df["contamination"].unique())
     sources = sorted(df["source"].unique())
 
-    fig, axes = plt.subplots(1, len(sources), figsize=(7 * len(sources), 6),
-                             squeeze=False)
-    fig.suptitle("Ensemble contamination sweep - per source",
-                 fontsize=13, fontweight="bold")
+    fig, axes = plt.subplots(
+        1, len(sources), figsize=(7 * len(sources), 6), squeeze=False
+    )
+    fig.suptitle(
+        "Ensemble contamination sweep - per source", fontsize=13, fontweight="bold"
+    )
 
     BASE, OTHER = "#4C78A8", "#E45756"
 
     for i, source in enumerate(sources):
         ax = axes[0, i]
         sub = df[df["source"] == source]
-        base_means  = [sub[(sub.contamination == c) & sub.is_baseline]["flag_rate"].mean() * 100
-                       for c in contaminations]
-        other_means = [sub[(sub.contamination == c) & ~sub.is_baseline]["flag_rate"].mean() * 100
-                       for c in contaminations]
+        base_means = [
+            sub[(sub.contamination == c) & sub.is_baseline]["flag_rate"].mean() * 100
+            for c in contaminations
+        ]
+        other_means = [
+            sub[(sub.contamination == c) & ~sub.is_baseline]["flag_rate"].mean() * 100
+            for c in contaminations
+        ]
         gaps = [o - b for b, o in zip(base_means, other_means)]
 
-        ax.plot(contaminations, base_means,  "o-", color=BASE,  lw=2, ms=7, label="Baseline mean")
-        ax.plot(contaminations, other_means, "o-", color=OTHER, lw=2, ms=7, label="Non-baseline mean")
-        ax.fill_between(contaminations, base_means, other_means,
-                        alpha=0.15, color="green", label="Gap (bigger = better)")
+        ax.plot(
+            contaminations,
+            base_means,
+            "o-",
+            color=BASE,
+            lw=2,
+            ms=7,
+            label="Baseline mean",
+        )
+        ax.plot(
+            contaminations,
+            other_means,
+            "o-",
+            color=OTHER,
+            lw=2,
+            ms=7,
+            label="Non-baseline mean",
+        )
+        ax.fill_between(
+            contaminations,
+            base_means,
+            other_means,
+            alpha=0.15,
+            color="green",
+            label="Gap (bigger = better)",
+        )
         if gaps:
             best_idx = int(np.argmax(gaps))
-            ax.axvline(contaminations[best_idx], color="green", ls="--", lw=1,
-                       label=f"Best gap @ c={contaminations[best_idx]}")
+            ax.axvline(
+                contaminations[best_idx],
+                color="green",
+                ls="--",
+                lw=1,
+                label=f"Best gap @ c={contaminations[best_idx]}",
+            )
         ax.set_xscale("log")
         ax.set_xlabel("Contamination")
         ax.set_ylabel("Mean flag rate (%)")
@@ -265,14 +316,20 @@ def plot_sweep(df: pd.DataFrame, out_path: Path) -> None:
 
 def main() -> int:
     p = argparse.ArgumentParser(
-        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter,
+        description=__doc__,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     p.add_argument("parent", type=Path)
     p.add_argument("--baseline-prefix", default="baseline")
-    p.add_argument("--contaminations", type=str,
-                   default="0.005,0.01,0.02,0.05,0.1,0.15,0.2")
-    p.add_argument("--threshold-pct", type=float, default=None,
-                   help="Fixed threshold percentile (default: scales with contamination)")
+    p.add_argument(
+        "--contaminations", type=str, default="0.005,0.01,0.02,0.05,0.1,0.15,0.2"
+    )
+    p.add_argument(
+        "--threshold-pct",
+        type=float,
+        default=None,
+        help="Fixed threshold percentile (default: scales with contamination)",
+    )
     p.add_argument("--n-estimators", type=int, default=200)
     args = p.parse_args()
 

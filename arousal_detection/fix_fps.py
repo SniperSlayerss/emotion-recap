@@ -10,10 +10,21 @@ def ffprobe_field(path: Path, entry: str) -> str | None:
     """Run ffprobe and return a single field, or None on failure."""
     try:
         result = subprocess.run(
-            ["ffprobe", "-v", "error", "-select_streams", "v:0",
-             "-show_entries", entry, "-of", "default=noprint_wrappers=1:nokey=1",
-             str(path)],
-            capture_output=True, text=True, check=True,
+            [
+                "ffprobe",
+                "-v",
+                "error",
+                "-select_streams",
+                "v:0",
+                "-show_entries",
+                entry,
+                "-of",
+                "default=noprint_wrappers=1:nokey=1",
+                str(path),
+            ],
+            capture_output=True,
+            text=True,
+            check=True,
         )
         return result.stdout.strip() or None
     except (subprocess.CalledProcessError, FileNotFoundError):
@@ -29,13 +40,24 @@ def video_info(path: Path) -> tuple[int | None, float | None]:
     if nb and nb.isdigit():
         frames = int(nb)
     elif nb:
-        # Container sometimes stores N/A; count manually as fallback
         try:
             result = subprocess.run(
-                ["ffprobe", "-v", "error", "-count_frames",
-                 "-select_streams", "v:0", "-show_entries", "stream=nb_read_frames",
-                 "-of", "default=noprint_wrappers=1:nokey=1", str(path)],
-                capture_output=True, text=True, check=True,
+                [
+                    "ffprobe",
+                    "-v",
+                    "error",
+                    "-count_frames",
+                    "-select_streams",
+                    "v:0",
+                    "-show_entries",
+                    "stream=nb_read_frames",
+                    "-of",
+                    "default=noprint_wrappers=1:nokey=1",
+                    str(path),
+                ],
+                capture_output=True,
+                text=True,
+                check=True,
             )
             val = result.stdout.strip()
             if val.isdigit():
@@ -54,7 +76,7 @@ def video_info(path: Path) -> tuple[int | None, float | None]:
 
 
 def plan_session(session_dir: Path) -> dict | None:
-    mp4  = session_dir / "video.mp4"
+    mp4 = session_dir / "video.mp4"
     h264 = session_dir / "video.h264"
     meta = session_dir / "session.json"
 
@@ -73,7 +95,6 @@ def plan_session(session_dir: Path) -> dict | None:
     if session_duration <= 0:
         return {"dir": session_dir, "status": "zero_duration"}
 
-    # Prefer h264 if available (original, untouched)
     source = h264 if h264.exists() else mp4
     frames, current_duration = video_info(source)
 
@@ -83,32 +104,30 @@ def plan_session(session_dir: Path) -> dict | None:
     true_fps = frames / session_duration
 
     return {
-        "dir":              session_dir,
-        "status":           "fixable",
-        "source":           source,
-        "frames":           frames,
+        "dir": session_dir,
+        "status": "fixable",
+        "source": source,
+        "frames": frames,
         "session_duration": session_duration,
         "current_duration": current_duration,
-        "true_fps":         true_fps,
+        "true_fps": true_fps,
     }
 
 
 def apply_fix(plan: dict, backup: bool) -> bool:
     """Re-mux the source at the correct fps. Return True on success."""
     session_dir = plan["dir"]
-    source      = plan["source"]
-    true_fps    = plan["true_fps"]
-    target      = session_dir / "video.mp4"
+    source = plan["source"]
+    true_fps = plan["true_fps"]
+    target = session_dir / "video.mp4"
 
     if backup and target.exists() and source != target:
-        # Source is h264, target mp4 already exists — back it up
         backup_path = session_dir / "video_original.mp4"
         if not backup_path.exists():
             shutil.copy2(target, backup_path)
             print(f"    Backed up existing mp4 {backup_path.name}")
 
     if backup and source == target:
-        # Re-muxing the mp4 itself — must back up first
         backup_path = session_dir / "video_original.mp4"
         if not backup_path.exists():
             shutil.move(target, backup_path)
@@ -117,21 +136,28 @@ def apply_fix(plan: dict, backup: bool) -> bool:
         else:
             source = backup_path
 
-    # Re-encode with the correct framerate. The SPS headers in the original
-    # h264 stream have 10fps baked in, so any -c copy approach inherits the
-    # wrong timing. Re-encoding rebuilds the bitstream with fresh timestamps.
     tmp_out = session_dir / "video.fixed.mp4"
     cmd = [
-        "ffmpeg", "-y",
-        "-r", f"{true_fps:.4f}",     # input rate — tells decoder how to time frames
-        "-i", str(source),
-        "-c:v", "libx264",
-        "-preset", "veryfast",
-        "-crf", "20",                # visually ~lossless, reasonable file size
-        "-r", f"{true_fps:.4f}",     # output rate — ensures container matches
-        "-pix_fmt", "yuv420p",       # maximum compatibility
-        "-c:a", "copy",              # audio unchanged if present
-        "-movflags", "+faststart",   # playable before fully downloaded
+        "ffmpeg",
+        "-y",
+        "-r",
+        f"{true_fps:.4f}",
+        "-i",
+        str(source),
+        "-c:v",
+        "libx264",
+        "-preset",
+        "veryfast",
+        "-crf",
+        "20",
+        "-r",
+        f"{true_fps:.4f}",  # output rate
+        "-pix_fmt",
+        "yuv420p",  # maximum compatibility
+        "-c:a",
+        "copy",  # audio unchanged if present
+        "-movflags",
+        "+faststart",  # playable before fully downloaded
         str(tmp_out),
     ]
     print(f"    Re-encoding at {true_fps:.2f} fps...")
@@ -146,14 +172,17 @@ def apply_fix(plan: dict, backup: bool) -> bool:
 
 
 def main() -> int:
-    p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    p = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     p.add_argument("path", type=Path, help="Session dir or parent containing sessions")
-    p.add_argument("--apply", action="store_true", help="Actually fix (default: dry-run)")
+    p.add_argument(
+        "--apply", action="store_true", help="Actually fix (default: dry-run)"
+    )
     p.add_argument("--backup", dest="backup", action="store_true", default=True)
     p.add_argument("--no-backup", dest="backup", action="store_false")
     args = p.parse_args()
 
-    # Check ffmpeg / ffprobe exist
     for tool in ("ffmpeg", "ffprobe"):
         if shutil.which(tool) is None:
             sys.exit(f"[ERROR] {tool} not found in PATH.")
@@ -161,13 +190,14 @@ def main() -> int:
     if not args.path.is_dir():
         sys.exit(f"[ERROR] Not a directory: {args.path}")
 
-    # Single session vs parent?
     if (args.path / "session.json").exists() or (args.path / "features.csv").exists():
         sessions = [args.path]
     else:
         sessions = sorted(
-            d for d in args.path.iterdir()
-            if d.is_dir() and ((d / "video.mp4").exists() or (d / "video.h264").exists())
+            d
+            for d in args.path.iterdir()
+            if d.is_dir()
+            and ((d / "video.mp4").exists() or (d / "video.h264").exists())
         )
 
     if not sessions:
@@ -179,12 +209,13 @@ def main() -> int:
 
     plans = [plan_session(s) for s in sessions]
 
-    # Report
     fixable = [p for p in plans if p and p["status"] == "fixable"]
     skipped = [p for p in plans if p and p["status"] != "fixable"]
 
     print("─" * 90)
-    print(f"{'session':<40} {'frames':>8} {'sess dur':>10} {'cur dur':>10} {'true fps':>10}")
+    print(
+        f"{'session':<40} {'frames':>8} {'sess dur':>10} {'cur dur':>10} {'true fps':>10}"
+    )
     print("─" * 90)
     for plan in plans:
         if plan is None:
@@ -211,7 +242,6 @@ def main() -> int:
     if not fixable:
         return 0
 
-    # Apply
     ok = 0
     for plan in fixable:
         print(f"[FIX] {plan['dir'].name}")

@@ -16,11 +16,6 @@ from arousal_detector import (
 DEFAULT_MERGE_TOLERANCE_S = 20.0
 
 
-# ===========================================================================
-# Shared utilities
-# ===========================================================================
-
-
 def _to_float(v) -> Optional[float]:
     if v is None or v == "" or (isinstance(v, float) and pd.isna(v)):
         return None
@@ -30,33 +25,24 @@ def _to_float(v) -> Optional[float]:
         return None
 
 
-# ===========================================================================
-# Merge-based scoring (comparison baseline)
-# ===========================================================================
-
-
 def merge_gsr_hrv(
     df: pd.DataFrame,
     tolerance_s: float = DEFAULT_MERGE_TOLERANCE_S,
 ) -> pd.DataFrame:
-    """
-    For each GSR row, find the nearest-in-time HRV row within `tolerance_s`
-    seconds and combine them into one merged row.
 
-    Unmatched GSR rows are kept with HRV features as NaN.
-
-    Returns a DataFrame with columns:
-        window_start_time  (from the GSR row)
-        hrv_time_s         (matched HRV time, or NaN)
-        match_gap_s        (abs time diff, NaN if unmatched)
-        gsr_*              (GSR features)
-        hrv_*              (HRV features, NaN if unmatched)
-    """
     if "source" not in df.columns or "window_start_time" not in df.columns:
         raise ValueError("DataFrame must have 'source' and 'window_start_time' columns")
 
-    gsr = df[df["source"] == "gsr"].sort_values("window_start_time").reset_index(drop=True)
-    hrv = df[df["source"] == "hrv"].sort_values("window_start_time").reset_index(drop=True)
+    gsr = (
+        df[df["source"] == "gsr"]
+        .sort_values("window_start_time")
+        .reset_index(drop=True)
+    )
+    hrv = (
+        df[df["source"] == "hrv"]
+        .sort_values("window_start_time")
+        .reset_index(drop=True)
+    )
 
     gsr_cols = [c for c in df.columns if c.startswith("gsr_")]
     hrv_cols = [c for c in df.columns if c.startswith("hrv_")]
@@ -64,15 +50,14 @@ def merge_gsr_hrv(
     merged_rows = []
 
     if gsr.empty and not hrv.empty:
-        # No GSR anchor — emit HRV-only rows
         for _, row in hrv.iterrows():
             out = {
                 "window_start_time": row["window_start_time"],
-                "hrv_time_s":        row["window_start_time"],
-                "match_gap_s":       0.0,
+                "hrv_time_s": row["window_start_time"],
+                "match_gap_s": 0.0,
             }
             out.update({c: np.nan for c in gsr_cols})
-            out.update({c: row[c]  for c in hrv_cols})
+            out.update({c: row[c] for c in hrv_cols})
             merged_rows.append(out)
         return pd.DataFrame(merged_rows)
 
@@ -87,15 +72,15 @@ def merge_gsr_hrv(
             gap = abs(hrv_times[idx] - g["window_start_time"])
             if gap <= tolerance_s:
                 h = hrv.iloc[idx]
-                out["hrv_time_s"]  = h["window_start_time"]
+                out["hrv_time_s"] = h["window_start_time"]
                 out["match_gap_s"] = float(gap)
                 out.update({c: h[c] for c in hrv_cols})
             else:
-                out["hrv_time_s"]  = np.nan
+                out["hrv_time_s"] = np.nan
                 out["match_gap_s"] = np.nan
                 out.update({c: np.nan for c in hrv_cols})
         else:
-            out["hrv_time_s"]  = np.nan
+            out["hrv_time_s"] = np.nan
             out["match_gap_s"] = np.nan
             out.update({c: np.nan for c in hrv_cols})
 
@@ -128,34 +113,31 @@ def score_session_file(
     merged = merge_gsr_hrv(df, tolerance_s=tolerance_s)
 
     n = len(merged)
-    scores       = np.full(n, np.nan)
+    scores = np.full(n, np.nan)
     normalised_a = np.full(n, np.nan)
-    aroused      = np.zeros(n, dtype=bool)
-    scored       = np.zeros(n, dtype=bool)
+    aroused = np.zeros(n, dtype=bool)
+    scored = np.zeros(n, dtype=bool)
 
     for i, row in merged.iterrows():
         result = score_merged_row(row, detector)
         if result is None:
             continue
-        scores[i]       = result.score
+        scores[i] = result.score
         normalised_a[i] = result.normalised
-        aroused[i]      = result.is_aroused
-        scored[i]       = True
+        aroused[i] = result.is_aroused
+        scored[i] = True
 
-    return pd.DataFrame({
-        "time_s":      merged["window_start_time"],
-        "hrv_time_s":  merged.get("hrv_time_s",  np.nan),
-        "match_gap_s": merged.get("match_gap_s", np.nan),
-        "score":       scores,
-        "normalised":  normalised_a,
-        "is_aroused":  aroused,
-        "scored":      scored,
-    })
-
-
-# ===========================================================================
-# Ensemble scoring
-# ===========================================================================
+    return pd.DataFrame(
+        {
+            "time_s": merged["window_start_time"],
+            "hrv_time_s": merged.get("hrv_time_s", np.nan),
+            "match_gap_s": merged.get("match_gap_s", np.nan),
+            "score": scores,
+            "normalised": normalised_a,
+            "is_aroused": aroused,
+            "scored": scored,
+        }
+    )
 
 
 def _score_source_rows(
@@ -164,17 +146,28 @@ def _score_source_rows(
     detector: ArousalDetector,
 ) -> pd.DataFrame:
     """Score every row where df['source'] == source. No imputation."""
-    rows = df[df["source"] == source].sort_values("window_start_time").reset_index(drop=True)
+    rows = (
+        df[df["source"] == source]
+        .sort_values("window_start_time")
+        .reset_index(drop=True)
+    )
     if rows.empty or detector is None:
-        return pd.DataFrame(columns=[
-            "time_s", "source", "score", "normalised", "is_aroused", "scored",
-        ])
+        return pd.DataFrame(
+            columns=[
+                "time_s",
+                "source",
+                "score",
+                "normalised",
+                "is_aroused",
+                "scored",
+            ]
+        )
 
     n = len(rows)
-    scores       = np.full(n, np.nan)
+    scores = np.full(n, np.nan)
     normalised_a = np.full(n, np.nan)
-    aroused      = np.zeros(n, dtype=bool)
-    scored       = np.zeros(n, dtype=bool)
+    aroused = np.zeros(n, dtype=bool)
+    scored = np.zeros(n, dtype=bool)
 
     for i, row in rows.iterrows():
         features = {}
@@ -191,19 +184,21 @@ def _score_source_rows(
         result = detector.score(features, source=source)
         if result is None:
             continue
-        scores[i]       = result.score
+        scores[i] = result.score
         normalised_a[i] = result.normalised
-        aroused[i]      = result.is_aroused
-        scored[i]       = True
+        aroused[i] = result.is_aroused
+        scored[i] = True
 
-    return pd.DataFrame({
-        "time_s":     rows["window_start_time"].values,
-        "source":     source,
-        "score":      scores,
-        "normalised": normalised_a,
-        "is_aroused": aroused,
-        "scored":     scored,
-    })
+    return pd.DataFrame(
+        {
+            "time_s": rows["window_start_time"].values,
+            "source": source,
+            "score": scores,
+            "normalised": normalised_a,
+            "is_aroused": aroused,
+            "scored": scored,
+        }
+    )
 
 
 def score_session_ensemble(
@@ -220,9 +215,16 @@ def score_session_ensemble(
         frames.append(_score_source_rows(df, "hrv", detector.hrv))
 
     if not frames:
-        return pd.DataFrame(columns=[
-            "time_s", "source", "score", "normalised", "is_aroused", "scored",
-        ])
+        return pd.DataFrame(
+            columns=[
+                "time_s",
+                "source",
+                "score",
+                "normalised",
+                "is_aroused",
+                "scored",
+            ]
+        )
 
     out = pd.concat(frames, ignore_index=True)
     return out.sort_values("time_s").reset_index(drop=True)
@@ -261,7 +263,11 @@ def combined_timeline(
         idx = int(np.argmin(np.abs(hrv_times - g["time_s"])))
         gap = abs(hrv_times[idx] - g["time_s"])
 
-        if gap <= pair_tolerance_s and bool(g["scored"]) and bool(hrv_rows.iloc[idx]["scored"]):
+        if (
+            gap <= pair_tolerance_s
+            and bool(g["scored"])
+            and bool(hrv_rows.iloc[idx]["scored"])
+        ):
             h = hrv_rows.iloc[idx]
             used_hrv.add(idx)
 
@@ -270,12 +276,12 @@ def combined_timeline(
             else:
                 flag = ((g["normalised"] + h["normalised"]) / 2) >= mean_threshold
 
-            results.append({**g.to_dict(),
-                            "is_aroused":  flag,
-                            "paired_with": float(h["time_s"])})
-            results.append({**h.to_dict(),
-                            "is_aroused":  flag,
-                            "paired_with": float(g["time_s"])})
+            results.append(
+                {**g.to_dict(), "is_aroused": flag, "paired_with": float(h["time_s"])}
+            )
+            results.append(
+                {**h.to_dict(), "is_aroused": flag, "paired_with": float(g["time_s"])}
+            )
         else:
             results.append({**g.to_dict(), "is_aroused": False, "paired_with": np.nan})
 
@@ -285,11 +291,6 @@ def combined_timeline(
         results.append({**h.to_dict(), "is_aroused": False, "paired_with": np.nan})
 
     return pd.DataFrame(results).sort_values("time_s").reset_index(drop=True)
-
-
-# ===========================================================================
-# Generic front door
-# ===========================================================================
 
 
 def score_session(

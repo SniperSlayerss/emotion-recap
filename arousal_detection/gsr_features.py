@@ -10,21 +10,17 @@ from scipy.signal import butter, filtfilt, find_peaks
 SERIAL_CALIBRATION = 509
 GROVE_FIXED_RESISTOR_OHMS = 10_000
 
-# Typical Grove ADC resolution (CHECK)
 ADC_RESOLUTION = 1024
 
 # Butterworth filter settings
-LOWPASS_CUTOFF_HZ = 1.0  # Remove noise above 1 Hz
-PHASIC_HIGHPASS_CUTOFF_HZ = 0.05  # Separate phasic from tonic
+LOWPASS_CUTOFF_HZ = 1.0
+PHASIC_HIGHPASS_CUTOFF_HZ = 0.05
 
-# SCR (skin conductance response) peak detection
-SCR_MIN_AMPLITUDE_US = 0.02  # Minimum SCR amplitude to count as a response (µS)
-SCR_MIN_DISTANCE_SAMPLES = (
-    10  # Minimum samples between SCR peaks (avoids double-counting)
-)
+SCR_MIN_AMPLITUDE_US = 0.02
+SCR_MIN_DISTANCE_SAMPLES = 10
 
 DEFAULT_WINDOW_SECONDS = 60
-DEFAULT_SAMPLE_RATE_HZ = 3.33  # 1 sample per 0.3s
+DEFAULT_SAMPLE_RATE_HZ = 3.33
 
 
 def adc_to_resistance_kohms(
@@ -39,7 +35,7 @@ def adc_to_resistance_kohms(
     resistance_ohms = (
         (ADC_RESOLUTION + 2 * adc_reading) * GROVE_FIXED_RESISTOR_OHMS
     ) / div
-    return resistance_ohms / 1000.0  # Convert to kΩ
+    return resistance_ohms / 1000.0
 
 
 def resistance_to_conductance_us(resistance_kohms: float) -> float:
@@ -62,9 +58,6 @@ def adc_to_conductance_us(
     return resistance_to_conductance_us(resistance)
 
 
-# ---------------------------------------------------------------------------
-# Signal processing
-# ---------------------------------------------------------------------------
 def lowpass_filter(
     signal: np.ndarray, cutoff_hz: float, sample_rate_hz: float, order: int = 4
 ) -> np.ndarray:
@@ -77,7 +70,7 @@ def lowpass_filter(
     """
     nyquist = sample_rate_hz / 2.0
     if cutoff_hz >= nyquist:
-        return signal  # Nothing to filter
+        return signal
     b, a = butter(order, cutoff_hz / nyquist, btype="low")
     return filtfilt(b, a, signal)
 
@@ -105,27 +98,21 @@ def decompose_tonic_phasic(
         try:
             import cvxeda
 
-            # cvxEDA expects signal sampled at 25 Hz — resample if needed
-            # For simplicity at 3.33 Hz we use the highpass fallback
             # TODO: upsample to 25 Hz with scipy.signal.resample before calling cvxEDA
             print(
-                "[gsr] cvxEDA requested but signal is at low sample rate — using highpass fallback."
+                "[gsr] cvxEDA requested but signal is at low sample rate."
             )
         except ImportError:
             print(
-                "[gsr] cvxeda not installed — using highpass decomposition. "
+                "[gsr] cvxeda not installed. "
                 "Install with: pip install cvxeda"
             )
 
-    # Highpass decomposition
     nyquist = sample_rate_hz / 2.0
     cutoff = PHASIC_HIGHPASS_CUTOFF_HZ
 
     if cutoff >= nyquist:
-        # Sample rate too low for clean HP filtering; use moving average subtraction instead
-        window = max(
-            1, int(sample_rate_hz * 20)
-        )  # 20-second moving average as tonic estimate
+        window = max(1, int(sample_rate_hz * 20))
         tonic = np.convolve(conductance, np.ones(window) / window, mode="same")
     else:
         b, a = butter(4, cutoff / nyquist, btype="low")
@@ -155,7 +142,6 @@ def detect_scr_peaks(
     """
     min_distance = max(1, int(SCR_MIN_DISTANCE_SAMPLES))
 
-    # Only look at positive deflections in phasic signal
     phasic_pos = np.clip(phasic, 0, None)
 
     peaks, properties = find_peaks(
@@ -185,8 +171,6 @@ def compute_scr_timings(
     for peak_idx in peak_indices:
         peak_val = phasic[peak_idx]
 
-        # Rise time
-        # Walk backwards from peak to find onset (local minimum or zero-crossing)
         onset_idx = peak_idx
         for i in range(peak_idx - 1, max(0, peak_idx - int(sample_rate_hz * 5)), -1):
             if phasic[i] <= 0 or phasic[i] >= phasic[i + 1]:
@@ -195,7 +179,6 @@ def compute_scr_timings(
         rise_time_s = (peak_idx - onset_idx) / sample_rate_hz
         rise_times.append(rise_time_s)
 
-        # Half-recovery time
         half_amp = peak_val * 0.5
         recovery_idx = None
         for i in range(
@@ -211,9 +194,6 @@ def compute_scr_timings(
     return rise_times, recovery_times
 
 
-# ---------------------------------------------------------------------------
-# Feature extraction
-# ---------------------------------------------------------------------------
 @dataclass
 class GSRFeatures:
     """
@@ -321,9 +301,6 @@ def extract_gsr_features(
     )
 
 
-# ---------------------------------------------------------------------------
-# Rolling window extractor (for real-time use)
-# ---------------------------------------------------------------------------
 class GSRFeatureExtractor:
     """
     Stateful rolling-window feature extractor for real-time use.
@@ -359,8 +336,6 @@ class GSRFeatureExtractor:
         conductance = adc_to_conductance_us(adc_value, self.calibration)
 
         if conductance is None or conductance <= 0 or conductance > 100:
-            # Typical human skin conductance is 0.5–50 µS at rest.
-            # Values outside this range indicate poor contact or sensor error.
             self._rejected_samples += 1
             return False
 
@@ -443,7 +418,6 @@ def collect_and_extract(adc_channel: int, window_seconds: float = 60.0):
         raw = sensor.read()
         extractor.add_reading(raw)
 
-        # Progress indicator (in-place so it doesn't flood the terminal)
         fill = extractor.buffer_fill_fraction
         print(f"[gsr] buffer: {fill:.0%}", end="\r")
 

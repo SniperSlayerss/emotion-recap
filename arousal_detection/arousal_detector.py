@@ -14,29 +14,15 @@ except ImportError:
     raise ImportError("Install joblib: pip install joblib")
 
 
-# ---------------------------------------------------------------------------
-# Result dataclasses
-# ---------------------------------------------------------------------------
-
-
 @dataclass
 class ArousalResult:
-    """
-    Result from one single-source inference call.
-
-    score       : Raw anomaly score from IsolationForest.score_samples().
-                  More negative = more anomalous. Typical range: [-0.7, 0.0]
-    normalised  : Score re-mapped to [0, 1] using training distribution.
-    is_aroused  : True if score < threshold.
-    source      : 'gsr' or 'hrv' — which model produced this score.
-    """
-    score:         float
-    normalised:    float
-    is_aroused:    bool
-    threshold:     float
-    source:        str = "unknown"
+    score: float
+    normalised: float
+    is_aroused: bool
+    threshold: float
+    source: str = "unknown"
     features_used: list[str] = field(default_factory=list)
-    missing:       list[str] = field(default_factory=list)
+    missing: list[str] = field(default_factory=list)
 
     def summary(self) -> str:
         flag = "AROUSED" if self.is_aroused else "baseline"
@@ -48,20 +34,11 @@ class ArousalResult:
 
 @dataclass
 class EnsembleResult:
-    """
-    Result from one ensemble inference call.
-
-    gsr, hrv  : Per-source results. Either may be None if that source's
-                features weren't supplied this window.
-    combined_normalised : Combined score in [0, 1] per the configured mode.
-    is_aroused          : Final flag after combining per-source flags.
-    mode                : 'any' | 'all' | 'mean' — how the decision was made.
-    """
-    gsr:                  Optional[ArousalResult]
-    hrv:                  Optional[ArousalResult]
-    combined_normalised:  float
-    is_aroused:           bool
-    mode:                 str
+    gsr: Optional[ArousalResult]
+    hrv: Optional[ArousalResult]
+    combined_normalised: float
+    is_aroused: bool
+    mode: str
 
     def summary(self) -> str:
         parts = []
@@ -77,22 +54,10 @@ class EnsembleResult:
         return head + " | " + " | ".join(parts) if parts else head
 
 
-# ---------------------------------------------------------------------------
-# Single-source detector
-# ---------------------------------------------------------------------------
-
-
 class ArousalDetector:
-    """
-    Load one trained Isolation Forest and run live inference.
-
-    A detector is tied to a single feature source (GSR or HRV). Use the
-    EnsembleDetector wrapper if you have separate GSR and HRV models.
-    """
-
     def __init__(self, model_path: Union[str, Path]):
         model_path = Path(model_path)
-        meta_path  = model_path.with_name(model_path.stem + "_meta.json")
+        meta_path = model_path.with_name(model_path.stem + "_meta.json")
 
         if not model_path.exists():
             raise FileNotFoundError(f"Model not found: {model_path}")
@@ -105,13 +70,13 @@ class ArousalDetector:
         with open(meta_path) as f:
             meta = json.load(f)
 
-        self.feature_cols:  list[str] = meta["feature_cols"]
+        self.feature_cols: list[str] = meta["feature_cols"]
         self.feature_names: list[str] = meta["feature_names"]
-        self.threshold:     float     = meta["threshold"]
-        self.source:        str       = meta.get("source", "unknown")
-        self._score_std:    float     = meta["score_std"]
-        self._score_min:    float     = meta["score_min"]
-        self._score_max:    float     = meta["score_max"]
+        self.threshold: float = meta["threshold"]
+        self.source: str = meta.get("source", "unknown")
+        self._score_std: float = meta["score_std"]
+        self._score_min: float = meta["score_min"]
+        self._score_max: float = meta["score_max"]
 
         print(
             f"[DETECTOR] Loaded {self.source} model from {model_path}\n"
@@ -124,10 +89,6 @@ class ArousalDetector:
         self._recent_scores: list[float] = []
         self._max_recent = 10
 
-    # ------------------------------------------------------------------
-    # Public API
-    # ------------------------------------------------------------------
-
     def score(
         self,
         features: dict,
@@ -139,17 +100,19 @@ class ArousalDetector:
         source = source or self.source
         normalised = self._normalise_keys(features, source)
 
-        present = [c for c in self.feature_cols
-                   if c in normalised and normalised[c] is not None]
+        present = [
+            c
+            for c in self.feature_cols
+            if c in normalised and normalised[c] is not None
+        ]
         missing = [c for c in self.feature_cols if c not in present]
 
         if len(present) < max(1, len(self.feature_cols) // 2):
             return None
 
-        x = np.array([[
-            float(normalised.get(c, 0.0) or 0.0)
-            for c in self.feature_cols
-        ]])
+        x = np.array(
+            [[float(normalised.get(c, 0.0) or 0.0) for c in self.feature_cols]]
+        )
 
         with self._lock:
             raw_score = float(self._pipe.score_samples(x)[0])
@@ -178,12 +141,7 @@ class ArousalDetector:
         slope = np.polyfit(range(len(recent)), recent, 1)[0]
         if abs(slope) < 0.005:
             return "stable"
-        # Score falls → arousal rises
         return "falling" if slope < 0 else "rising"
-
-    # ------------------------------------------------------------------
-    # Internals
-    # ------------------------------------------------------------------
 
     def _normalise_keys(self, features: dict, source: str) -> dict:
         out = {}
@@ -205,28 +163,10 @@ class ArousalDetector:
         return float(np.clip(normalised, 0.0, 1.0))
 
 
-# ---------------------------------------------------------------------------
-# Ensemble detector
-# ---------------------------------------------------------------------------
-
-
 COMBINE_MODES = ("any", "all", "mean")
 
 
 class EnsembleDetector:
-    """
-    Combines an independent GSR detector and HRV detector into one decision.
-
-    Combination modes:
-        'any'  : flag if either source flags (most sensitive)
-        'all'  : flag only if both sources flag (most specific)
-        'mean' : flag if the mean of normalised scores crosses a threshold
-
-    For 'mean' mode, the flag threshold defaults to the mean of the two
-    models' per-source normalised thresholds, but can be overridden via
-    `mean_threshold`.
-    """
-
     def __init__(
         self,
         gsr_detector: Optional[ArousalDetector],
@@ -246,9 +186,6 @@ class EnsembleDetector:
         self._last_gsr: Optional[ArousalResult] = None
         self._last_hrv: Optional[ArousalResult] = None
 
-        # Default 'mean' threshold: the average of each sub-model's own
-        # normalised threshold — i.e. what each one would flag at on its
-        # own scale. Overridable for hand-tuning.
         if mean_threshold is None:
             thresholds = []
             if gsr_detector is not None:
@@ -264,10 +201,6 @@ class EnsembleDetector:
             f"hrv={'yes' if hrv_detector else 'no'}, mode='{mode}', "
             f"mean_threshold={self.mean_threshold:.3f}"
         )
-
-    # ------------------------------------------------------------------
-    # Public API
-    # ------------------------------------------------------------------
 
     @property
     def feature_cols(self) -> list[str]:
@@ -335,10 +268,6 @@ class EnsembleDetector:
             return "falling"
         return "stable"
 
-    # ------------------------------------------------------------------
-    # Internals
-    # ------------------------------------------------------------------
-
     @staticmethod
     def _extract_for(target_source: str, features: dict, source_hint: str) -> dict:
 
@@ -369,19 +298,11 @@ class EnsembleDetector:
         if self.mode == "any":
             is_aroused = any(flags)
         elif self.mode == "all":
-            # 'all' only flags when both sub-detectors have fired AND flagged
-            # — a single-source-only 'all' would be misleadingly equivalent
-            # to that source's own flag.
             is_aroused = len(flags) == 2 and all(flags)
-        else:  # 'mean'
+        else:
             is_aroused = combined_norm >= self.mean_threshold
 
         return combined_norm, is_aroused
-
-
-# ---------------------------------------------------------------------------
-# Factory
-# ---------------------------------------------------------------------------
 
 
 def load_detector(

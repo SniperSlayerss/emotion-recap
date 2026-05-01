@@ -15,11 +15,6 @@ from session_scoring import (
 )
 
 
-# ---------------------------------------------------------------------------
-# Formatting
-# ---------------------------------------------------------------------------
-
-
 def format_time(seconds: float) -> str:
     m = int(seconds) // 60
     s = int(seconds) % 60
@@ -30,11 +25,6 @@ def format_time_human(seconds: float) -> str:
     m = int(seconds) // 60
     s = int(seconds) % 60
     return f"{m}:{s:02d}"
-
-
-# ---------------------------------------------------------------------------
-# Event merging / splitting
-# ---------------------------------------------------------------------------
 
 
 def merge_events(flags: list[dict], merge_gap: float) -> list[dict]:
@@ -54,24 +44,24 @@ def merge_events(flags: list[dict], merge_gap: float) -> list[dict]:
 
 def _flag_to_event(f: dict) -> dict:
     return {
-        "start_s":         f["time_s"],
-        "end_s":           f["time_s"],
-        "peak_time_s":     f["time_s"],
+        "start_s": f["time_s"],
+        "end_s": f["time_s"],
+        "peak_time_s": f["time_s"],
         "peak_normalised": f["normalised"],
-        "peak_score":      f["score"],
-        "n_flags":         1,
+        "peak_score": f["score"],
+        "n_flags": 1,
     }
 
 
 def _event_summary(group: list[dict]) -> dict:
     peak = max(group, key=lambda f: f["normalised"])
     return {
-        "start_s":         min(f["time_s"] for f in group),
-        "end_s":           max(f["time_s"] for f in group),
-        "peak_time_s":     peak["time_s"],
+        "start_s": min(f["time_s"] for f in group),
+        "end_s": max(f["time_s"] for f in group),
+        "peak_time_s": peak["time_s"],
         "peak_normalised": peak["normalised"],
-        "peak_score":      peak["score"],
-        "n_flags":         len(group),
+        "peak_score": peak["score"],
+        "n_flags": len(group),
     }
 
 
@@ -93,45 +83,60 @@ def split_long_events(
         t = ev["start_s"]
         while t <= ev["end_s"]:
             end = min(t + chunk, ev["end_s"])
-            out.append({
-                "start_s":         t,
-                "end_s":           end,
-                "peak_time_s":     (t + end) / 2,
-                "peak_normalised": ev["peak_normalised"],
-                "peak_score":      ev["peak_score"],
-                "n_flags":         ev["n_flags"],
-                "split":           True,
-            })
+            out.append(
+                {
+                    "start_s": t,
+                    "end_s": end,
+                    "peak_time_s": (t + end) / 2,
+                    "peak_normalised": ev["peak_normalised"],
+                    "peak_score": ev["peak_score"],
+                    "n_flags": ev["n_flags"],
+                    "split": True,
+                }
+            )
             t = end + 0.001
     return out
 
 
-# ---------------------------------------------------------------------------
-# ffmpeg
-# ---------------------------------------------------------------------------
-
-
-def extract_clip(video: Path, start_s: float, duration_s: float,
-                 out: Path, reencode: bool) -> bool:
+def extract_clip(
+    video: Path, start_s: float, duration_s: float, out: Path, reencode: bool
+) -> bool:
     if reencode:
         cmd = [
-            "ffmpeg", "-y",
-            "-i", str(video),
-            "-ss", f"{start_s:.3f}",
-            "-t",  f"{duration_s:.3f}",
-            "-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
-            "-c:a", "aac",
-            "-movflags", "+faststart",
+            "ffmpeg",
+            "-y",
+            "-i",
+            str(video),
+            "-ss",
+            f"{start_s:.3f}",
+            "-t",
+            f"{duration_s:.3f}",
+            "-c:v",
+            "libx264",
+            "-preset",
+            "veryfast",
+            "-crf",
+            "20",
+            "-c:a",
+            "aac",
+            "-movflags",
+            "+faststart",
             str(out),
         ]
     else:
         cmd = [
-            "ffmpeg", "-y",
-            "-ss", f"{start_s:.3f}",
-            "-i",  str(video),
-            "-t",  f"{duration_s:.3f}",
-            "-c",  "copy",
-            "-avoid_negative_ts", "make_zero",
+            "ffmpeg",
+            "-y",
+            "-ss",
+            f"{start_s:.3f}",
+            "-i",
+            str(video),
+            "-t",
+            f"{duration_s:.3f}",
+            "-c",
+            "copy",
+            "-avoid_negative_ts",
+            "make_zero",
             str(out),
         ]
     result = subprocess.run(cmd, capture_output=True, text=True)
@@ -143,42 +148,47 @@ def extract_clip(video: Path, start_s: float, duration_s: float,
 
 def get_video_duration(video: Path) -> float:
     probe = subprocess.run(
-        ["ffprobe", "-v", "error", "-show_entries", "format=duration",
-         "-of", "default=noprint_wrappers=1:nokey=1", str(video)],
-        capture_output=True, text=True,
+        [
+            "ffprobe",
+            "-v",
+            "error",
+            "-show_entries",
+            "format=duration",
+            "-of",
+            "default=noprint_wrappers=1:nokey=1",
+            str(video),
+        ],
+        capture_output=True,
+        text=True,
     )
     return float(probe.stdout.strip())
 
 
-# ---------------------------------------------------------------------------
-# Main
-# ---------------------------------------------------------------------------
-
-
 def main() -> int:
     p = argparse.ArgumentParser(
-        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter,
+        description=__doc__,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     p.add_argument("session_dir", type=Path)
     p.add_argument("--model", type=Path, required=True)
-    p.add_argument("--pre",  type=float, default=45.0)
+    p.add_argument("--pre", type=float, default=45.0)
     p.add_argument("--post", type=float, default=30.0)
-    p.add_argument("--merge-gap",    type=float, default=60.0)
+    p.add_argument("--merge-gap", type=float, default=60.0)
     p.add_argument("--max-duration", type=float, default=180.0)
-    p.add_argument("--min-score",    type=float, default=0.0)
-    p.add_argument("--top-n",        type=int,   default=None)
-    p.add_argument("--out-dir",      type=Path,  default=None)
-    p.add_argument("--reencode",     action="store_true")
+    p.add_argument("--min-score", type=float, default=0.0)
+    p.add_argument("--top-n", type=int, default=None)
+    p.add_argument("--out-dir", type=Path, default=None)
+    p.add_argument("--reencode", action="store_true")
     p.add_argument("--combine-mode", choices=("any", "all", "mean"), default="any")
     p.add_argument("--mean-threshold", type=float, default=None)
     p.add_argument("--pair-tolerance", type=float, default=30.0)
-    p.add_argument("--tolerance",    type=float, default=DEFAULT_MERGE_TOLERANCE_S)
+    p.add_argument("--tolerance", type=float, default=DEFAULT_MERGE_TOLERANCE_S)
     args = p.parse_args()
 
     if shutil.which("ffmpeg") is None:
         sys.exit("[ERROR] ffmpeg not in PATH")
 
-    csv_path   = args.session_dir / "features.csv"
+    csv_path = args.session_dir / "features.csv"
     video_path = args.session_dir / "video.mp4"
     if not csv_path.exists():
         sys.exit(f"[ERROR] No features.csv in {args.session_dir}")
@@ -199,8 +209,10 @@ def main() -> int:
 
     print(f"[EXTRACT] Session:     {args.session_dir}")
     print(f"[EXTRACT] Video:       {video_path.name} ({video_duration:.1f}s)")
-    print(f"[EXTRACT] Model:       {args.model} "
-          f"({'ensemble:' + args.combine_mode if is_ensemble else 'single'})")
+    print(
+        f"[EXTRACT] Model:       {args.model} "
+        f"({'ensemble:' + args.combine_mode if is_ensemble else 'single'})"
+    )
     print(f"[EXTRACT] Padding:     -{args.pre:.0f}s / +{args.post:.0f}s")
     print(f"[EXTRACT] Merge gap:   {args.merge_gap:.0f}s")
     print(f"[EXTRACT] Max clip:    {args.max_duration:.0f}s\n")
@@ -212,19 +224,25 @@ def main() -> int:
             raw,
             mode=args.combine_mode,
             pair_tolerance_s=args.pair_tolerance,
-            mean_threshold=(args.mean_threshold
-                            if args.mean_threshold is not None
-                            else detector.mean_threshold),
+            mean_threshold=(
+                args.mean_threshold
+                if args.mean_threshold is not None
+                else detector.mean_threshold
+            ),
         )
     else:
         results = raw.copy()
         if "paired_with" not in results.columns:
             results["paired_with"] = None
 
-    scored  = int(results["scored"].sum()) if "scored" in results.columns else len(results)
+    scored = (
+        int(results["scored"].sum()) if "scored" in results.columns else len(results)
+    )
     flagged = int(results["is_aroused"].sum())
-    print(f"[EXTRACT] Timeline: {len(results)} rows "
-          f"({scored} scored, {flagged} flagged)\n")
+    print(
+        f"[EXTRACT] Timeline: {len(results)} rows "
+        f"({scored} scored, {flagged} flagged)\n"
+    )
 
     flags = [
         {"time_s": r["time_s"], "score": r["score"], "normalised": r["normalised"]}
@@ -239,7 +257,9 @@ def main() -> int:
 
     events = [e for e in events if e["peak_normalised"] >= args.min_score]
     if args.top_n is not None:
-        events = sorted(events, key=lambda e: e["peak_normalised"], reverse=True)[:args.top_n]
+        events = sorted(events, key=lambda e: e["peak_normalised"], reverse=True)[
+            : args.top_n
+        ]
     events.sort(key=lambda e: e["peak_time_s"])
 
     if not events:
@@ -253,40 +273,48 @@ def main() -> int:
 
     for i, ev in enumerate(events, 1):
         start = max(0.0, ev["start_s"] - args.pre)
-        end   = min(video_duration, ev["end_s"] + args.post)
-        dur   = end - start
+        end = min(video_duration, ev["end_s"] + args.post)
+        dur = end - start
 
         if dur < 1.0:
-            print(f"  [{i:02d}] SKIP — clip too short after clamping")
+            print(f"  [{i:02d}] SKIP clip too short after clamping")
             continue
 
-        name = (f"clip_{i:02d}_peak-{format_time(ev['peak_time_s'])}"
-                f"_norm-{ev['peak_normalised']:.2f}.mp4")
+        name = (
+            f"clip_{i:02d}_peak-{format_time(ev['peak_time_s'])}"
+            f"_norm-{ev['peak_normalised']:.2f}.mp4"
+        )
         out_path = out_dir / name
 
         tag = " [split]" if ev.get("split") else ""
-        print(f"  [{i:02d}] event {format_time_human(ev['start_s'])}–"
-              f"{format_time_human(ev['end_s'])}{tag} "
-              f"(peak {format_time_human(ev['peak_time_s'])}, "
-              f"{ev['n_flags']} flag{'s' if ev['n_flags'] > 1 else ''})")
-        print(f"       clip: {format_time_human(start)}–{format_time_human(end)} "
-              f"({dur:.1f}s) {name}")
+        print(
+            f"  [{i:02d}] event {format_time_human(ev['start_s'])}-"
+            f"{format_time_human(ev['end_s'])}{tag} "
+            f"(peak {format_time_human(ev['peak_time_s'])}, "
+            f"{ev['n_flags']} flag{'s' if ev['n_flags'] > 1 else ''})"
+        )
+        print(
+            f"       clip: {format_time_human(start)}-{format_time_human(end)} "
+            f"({dur:.1f}s) {name}"
+        )
 
         if extract_clip(video_path, start, dur, out_path, args.reencode):
             ok += 1
-            index_rows.append({
-                "clip":              name,
-                "event_start_s":     round(ev["start_s"],  2),
-                "event_end_s":       round(ev["end_s"],    2),
-                "peak_time_s":       round(ev["peak_time_s"], 2),
-                "peak_normalised":   round(ev["peak_normalised"], 4),
-                "peak_score":        round(ev["peak_score"], 4),
-                "n_flags":           ev["n_flags"],
-                "clip_start_s":      round(start, 2),
-                "clip_end_s":        round(end,   2),
-                "clip_duration_s":   round(dur,   2),
-                "was_split":         bool(ev.get("split", False)),
-            })
+            index_rows.append(
+                {
+                    "clip": name,
+                    "event_start_s": round(ev["start_s"], 2),
+                    "event_end_s": round(ev["end_s"], 2),
+                    "peak_time_s": round(ev["peak_time_s"], 2),
+                    "peak_normalised": round(ev["peak_normalised"], 4),
+                    "peak_score": round(ev["peak_score"], 4),
+                    "n_flags": ev["n_flags"],
+                    "clip_start_s": round(start, 2),
+                    "clip_end_s": round(end, 2),
+                    "clip_duration_s": round(dur, 2),
+                    "was_split": bool(ev.get("split", False)),
+                }
+            )
 
     if index_rows:
         index_path = out_dir / "clips.csv"

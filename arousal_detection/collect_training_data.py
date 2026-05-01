@@ -32,35 +32,25 @@ from gsr_features import GSRFeatureExtractor, DEFAULT_SAMPLE_RATE_HZ as GSR_RATE
 from hrv_features import HRVFeatureExtractor
 
 
-# ---------------------------------------------------------------------------
-# Configuration
-# ---------------------------------------------------------------------------
-
 BLE_ADDRESS = "00:22:D0:47:9C:DE"
-HR_CHAR     = "00002a37-0000-1000-8000-00805f9b34fb"
+HR_CHAR = "00002a37-0000-1000-8000-00805f9b34fb"
 
-AUDIO_RATE     = 48_000
+AUDIO_RATE = 48_000
 AUDIO_CHANNELS = 2
-AUDIO_CHUNK    = 1024
-AUDIO_FORMAT   = pyaudio.paInt16
+AUDIO_CHUNK = 1024
+AUDIO_FORMAT = pyaudio.paInt16
 
-VIDEO_WIDTH     = 1280
-VIDEO_HEIGHT    = 720
+VIDEO_WIDTH = 1280
+VIDEO_HEIGHT = 720
 VIDEO_FRAMERATE = 10
-# Picamera2 FrameDurationLimits are in microseconds. 100_000 µs = 10 fps.
 VIDEO_FRAME_DURATION_US = 100_000
 
 GSR_WINDOW_S = 60.0
 HRV_WINDOW_S = 60.0
-HRV_STEP_S   = 30.0
+HRV_STEP_S = 30.0
 
 
 DetectorLike = Union[ArousalDetector, EnsembleDetector]
-
-
-# ---------------------------------------------------------------------------
-# Session state
-# ---------------------------------------------------------------------------
 
 
 def make_session_dir(label: str) -> Path:
@@ -72,22 +62,15 @@ def make_session_dir(label: str) -> Path:
 
 @dataclass
 class SessionState:
-    label:       str
+    label: str
     session_dir: Path
-    start_time:  float = field(default_factory=time.time)
-    running:     bool  = True
+    start_time: float = field(default_factory=time.time)
+    running: bool = True
 
-    # Feature rows are written from multiple threads — protect with a lock
     features_lock: threading.Lock = field(default_factory=threading.Lock)
-    feature_rows:  list           = field(default_factory=list)
+    feature_rows: list = field(default_factory=list)
 
-    # Optional live detector — None if --model isn't supplied
     detector: Optional[DetectorLike] = None
-
-
-# ---------------------------------------------------------------------------
-# Inference helpers
-# ---------------------------------------------------------------------------
 
 
 def _log_result(source: str, result: Union[ArousalResult, EnsembleResult]) -> None:
@@ -97,33 +80,32 @@ def _log_result(source: str, result: Union[ArousalResult, EnsembleResult]) -> No
 def _flatten_result(result: Union[ArousalResult, EnsembleResult, None]) -> dict:
     if result is None:
         return {
-            "anomaly_score":      None,
+            "anomaly_score": None,
             "anomaly_normalised": None,
-            "is_aroused":         None,
+            "is_aroused": None,
         }
 
     if isinstance(result, ArousalResult):
         return {
-            "anomaly_score":      result.score,
+            "anomaly_score": result.score,
             "anomaly_normalised": result.normalised,
-            "is_aroused":         int(result.is_aroused),
+            "is_aroused": int(result.is_aroused),
         }
 
-    # EnsembleResult
     out = {
-        "anomaly_score":      None,  # no single 'raw' score for an ensemble
+        "anomaly_score": None,
         "anomaly_normalised": result.combined_normalised,
-        "is_aroused":         int(result.is_aroused),
-        "ensemble_mode":      result.mode,
+        "is_aroused": int(result.is_aroused),
+        "ensemble_mode": result.mode,
     }
     if result.gsr is not None:
-        out["gsr_anomaly_score"]      = result.gsr.score
+        out["gsr_anomaly_score"] = result.gsr.score
         out["gsr_anomaly_normalised"] = result.gsr.normalised
-        out["gsr_is_aroused"]         = int(result.gsr.is_aroused)
+        out["gsr_is_aroused"] = int(result.gsr.is_aroused)
     if result.hrv is not None:
-        out["hrv_anomaly_score"]      = result.hrv.score
+        out["hrv_anomaly_score"] = result.hrv.score
         out["hrv_anomaly_normalised"] = result.hrv.normalised
-        out["hrv_is_aroused"]         = int(result.hrv.is_aroused)
+        out["hrv_is_aroused"] = int(result.hrv.is_aroused)
     return out
 
 
@@ -144,14 +126,12 @@ def merge_and_save(
             if trend:
                 print(f"[DETECTOR/{source}]{trend_str}")
         else:
-            print(
-                f"[DETECTOR/{source}] Skipped — too few features for this window."
-            )
+            print(f"[DETECTOR/{source}] Skipped too few features for this window.")
 
     row = {
-        "source":            source,
-        "label":             state.label,
-        "session_start":     state.start_time,
+        "source": source,
+        "label": state.label,
+        "session_start": state.start_time,
         "window_start_time": time.time() - state.start_time,
         **{f"{source}_{k}": v for k, v in features.items()},
         **_flatten_result(result),
@@ -175,7 +155,6 @@ def flush_csv(state: SessionState) -> None:
         print("[SESSION] No features to save")
         return
 
-    # Union of all keys across rows, preserving first-seen order
     all_keys: list[str] = []
     seen: set[str] = set()
     for row in rows:
@@ -193,20 +172,16 @@ def flush_csv(state: SessionState) -> None:
     print(f"[SESSION] Features saved at {csv_path} ({len(rows)} rows)")
 
 
-# ---------------------------------------------------------------------------
-# GSR thread
-# ---------------------------------------------------------------------------
-
-
 def gsr_thread(state: SessionState, gsr_channel: int) -> None:
     try:
         from grove.adc import ADC
+
         adc = ADC()
 
         def read_adc() -> int:
             return adc.read(gsr_channel)
     except ImportError:
-        print("[GSR] grove.adc not available — using mock sensor.")
+        print("[GSR] grove.adc not available using mock.")
         counter = [0]
 
         def read_adc() -> int:
@@ -237,11 +212,6 @@ def gsr_thread(state: SessionState, gsr_channel: int) -> None:
         time.sleep(sleep_s)
 
     print("\n[GSR] Thread stopped.")
-
-
-# ---------------------------------------------------------------------------
-# Audio thread
-# ---------------------------------------------------------------------------
 
 
 def audio_thread(state: SessionState) -> None:
@@ -276,11 +246,6 @@ def audio_thread(state: SessionState) -> None:
         print(f"[AUDIO] Saved as {wav_path}")
 
 
-# ---------------------------------------------------------------------------
-# Video
-# ---------------------------------------------------------------------------
-
-
 def start_video(state: SessionState) -> tuple[Picamera2, H264Encoder]:
     video_path = state.session_dir / "video.h264"
 
@@ -288,13 +253,14 @@ def start_video(state: SessionState) -> tuple[Picamera2, H264Encoder]:
     config = cam.create_preview_configuration(
         main={"size": (VIDEO_WIDTH, VIDEO_HEIGHT)},
         sensor={"output_size": (4608, 2592)},
-        controls={"FrameDurationLimits": (VIDEO_FRAME_DURATION_US,
-                                          VIDEO_FRAME_DURATION_US)},
+        controls={
+            "FrameDurationLimits": (VIDEO_FRAME_DURATION_US, VIDEO_FRAME_DURATION_US)
+        },
     )
     cam.configure(config)
 
     encoder = H264Encoder(bitrate=10_000_000)
-    output  = FileOutput(str(video_path))
+    output = FileOutput(str(video_path))
     cam.start_recording(encoder, output)
 
     print(f"[VIDEO] Recording to {video_path}")
@@ -307,29 +273,29 @@ def stop_video(cam: Picamera2, session_dir: Path) -> None:
     print("[VIDEO] Stopped")
 
     h264_path = session_dir / "video.h264"
-    mp4_path  = session_dir / "video.mp4"
+    mp4_path = session_dir / "video.mp4"
     print("[VIDEO] Converting to MP4...")
 
     result = subprocess.run(
         [
-            "ffmpeg", "-y",
-            "-framerate", str(VIDEO_FRAMERATE),
-            "-i", str(h264_path),
-            "-c", "copy",
+            "ffmpeg",
+            "-y",
+            "-framerate",
+            str(VIDEO_FRAMERATE),
+            "-i",
+            str(h264_path),
+            "-c",
+            "copy",
             str(mp4_path),
         ],
-        capture_output=True, text=True,
+        capture_output=True,
+        text=True,
     )
     if result.returncode == 0:
         h264_path.unlink()
         print(f"[VIDEO] Saved as {mp4_path}")
     else:
         print(f"[VIDEO] ffmpeg conversion failed, keeping raw .h264\n{result.stderr}")
-
-
-# ---------------------------------------------------------------------------
-# BLE / HRV task
-# ---------------------------------------------------------------------------
 
 
 async def ble_task(state: SessionState) -> None:
@@ -350,8 +316,9 @@ async def ble_task(state: SessionState) -> None:
         rr_values: list[float] = []
         if flags & 0x10:
             while rr_offset + 1 < len(data):
-                rr_raw = int.from_bytes(data[rr_offset:rr_offset + 2],
-                                         byteorder="little")
+                rr_raw = int.from_bytes(
+                    data[rr_offset : rr_offset + 2], byteorder="little"
+                )
                 rr_values.append(round(rr_raw * 1000 / 1024, 1))
                 rr_offset += 2
 
@@ -377,53 +344,45 @@ async def ble_task(state: SessionState) -> None:
     print("[HRV] BLE disconnected")
 
 
-# ---------------------------------------------------------------------------
-# Metadata
-# ---------------------------------------------------------------------------
-
-
 def describe_detector(detector: Optional[DetectorLike]) -> Optional[dict]:
     if detector is None:
         return None
     if isinstance(detector, EnsembleDetector):
         return {
-            "type":           "ensemble",
-            "mode":           detector.mode,
+            "type": "ensemble",
+            "mode": detector.mode,
             "mean_threshold": detector.mean_threshold,
-            "sub_models":     [d.source for d in (detector.gsr, detector.hrv) if d is not None],
+            "sub_models": [
+                d.source for d in (detector.gsr, detector.hrv) if d is not None
+            ],
         }
     return {
-        "type":         "single",
-        "source":       detector.source,
+        "type": "single",
+        "source": detector.source,
         "feature_cols": detector.feature_cols,
     }
 
 
 def save_metadata(state: SessionState, duration_s: float) -> None:
     meta = {
-        "label":             state.label,
-        "start_time":        datetime.fromtimestamp(state.start_time).isoformat(),
-        "duration_s":        round(duration_s, 2),
-        "gsr_sample_rate":   GSR_RATE,
-        "gsr_window_s":      GSR_WINDOW_S,
-        "hrv_window_s":      HRV_WINDOW_S,
-        "hrv_step_s":        HRV_STEP_S,
-        "audio_rate":        AUDIO_RATE,
-        "video_fps":         VIDEO_FRAMERATE,
-        "video_resolution":  [VIDEO_WIDTH, VIDEO_HEIGHT],
-        "ble_address":       BLE_ADDRESS,
-        "n_feature_rows":    len(state.feature_rows),
-        "model_used":        describe_detector(state.detector),
+        "label": state.label,
+        "start_time": datetime.fromtimestamp(state.start_time).isoformat(),
+        "duration_s": round(duration_s, 2),
+        "gsr_sample_rate": GSR_RATE,
+        "gsr_window_s": GSR_WINDOW_S,
+        "hrv_window_s": HRV_WINDOW_S,
+        "hrv_step_s": HRV_STEP_S,
+        "audio_rate": AUDIO_RATE,
+        "video_fps": VIDEO_FRAMERATE,
+        "video_resolution": [VIDEO_WIDTH, VIDEO_HEIGHT],
+        "ble_address": BLE_ADDRESS,
+        "n_feature_rows": len(state.feature_rows),
+        "model_used": describe_detector(state.detector),
     }
     meta_path = state.session_dir / "session.json"
     with open(meta_path, "w") as f:
         json.dump(meta, f, indent=2)
     print(f"[SESSION] Metadata saved as {meta_path}")
-
-
-# ---------------------------------------------------------------------------
-# CLI arg parsing
-# ---------------------------------------------------------------------------
 
 
 def _arg_value(flag: str) -> Optional[str]:
@@ -435,19 +394,16 @@ def _arg_value(flag: str) -> Optional[str]:
     return sys.argv[idx + 1]
 
 
-# ---------------------------------------------------------------------------
-# Main
-# ---------------------------------------------------------------------------
-
-
 async def main() -> None:
     if len(sys.argv) < 2 or sys.argv[1].startswith("-"):
-        sys.exit("Usage: python collect_training_data.py <gsr_adc_channel> "
-                 "[--label LBL] [--model PATH] [--combine-mode any|all|mean]")
+        sys.exit(
+            "Usage: python collect_training_data.py <gsr_adc_channel> "
+            "[--label LBL] [--model PATH] [--combine-mode any|all|mean]"
+        )
 
     gsr_channel = int(sys.argv[1])
-    label       = (_arg_value("--label") or "unlabelled").replace(" ", "_")
-    model_path  = _arg_value("--model")
+    label = (_arg_value("--label") or "unlabelled").replace(" ", "_")
+    model_path = _arg_value("--model")
     combine_mode = _arg_value("--combine-mode") or "any"
 
     detector: Optional[DetectorLike] = None
@@ -470,13 +426,12 @@ async def main() -> None:
         print("\n[SESSION] Shutting down...")
         state.running = False
 
-    signal.signal(signal.SIGINT,  _shutdown)
+    signal.signal(signal.SIGINT, _shutdown)
     signal.signal(signal.SIGTERM, _shutdown)
 
     cam, _encoder = start_video(state)
 
-    t_gsr   = threading.Thread(target=gsr_thread,
-                               args=(state, gsr_channel), daemon=True)
+    t_gsr = threading.Thread(target=gsr_thread, args=(state, gsr_channel), daemon=True)
     t_audio = threading.Thread(target=audio_thread, args=(state,), daemon=True)
     t_gsr.start()
     t_audio.start()
