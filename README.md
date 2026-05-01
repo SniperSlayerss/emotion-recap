@@ -1,8 +1,3 @@
-# Clone repo
-```
-git clone https://github.com/SniperSlayerss/emotion-recap.git
-git submodule update --init --recursive
-```
 # Dependencies
 ## PyAudio
 sudo apt install -y portaudio19-dev
