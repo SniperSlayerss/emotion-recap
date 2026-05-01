@@ -1,26 +1,3 @@
-"""
-arousal_detector.py
-
-Inference wrappers for the trained Isolation Forest models.
-
-Two detector types are supported:
-
-    ArousalDetector
-        Single-source model (GSR-only or HRV-only). Loads a sklearn Pipeline
-        and a metadata JSON and scores feature dicts of one kind.
-
-    EnsembleDetector
-        Two ArousalDetectors (one per source) with configurable combination
-        ('any', 'all', 'mean'). Scores each source independently — no
-        GSR/HRV window merging required.
-
-Use the `load_detector()` factory to load either artifact type from a path;
-it inspects the metadata and returns the right class.
-
-Both classes are thread-safe (inference happens under a lock) so they can
-be called from the GSR thread and the HRV BLE coroutine in parallel.
-"""
-
 from __future__ import annotations
 
 import json
@@ -158,13 +135,6 @@ class ArousalDetector:
     ) -> Optional[ArousalResult]:
         """
         Score one feature window.
-
-        `features` accepts both shapes:
-          - Bare keys ('scl_mean', 'rmssd') — pass `source` so we can
-            prefix them to match feature_cols.
-          - Prefixed keys ('gsr_scl_mean', 'hrv_rmssd') — `source` ignored.
-
-        Returns None if more than half of expected features are missing.
         """
         source = source or self.source
         normalised = self._normalise_keys(features, source)
@@ -216,7 +186,6 @@ class ArousalDetector:
     # ------------------------------------------------------------------
 
     def _normalise_keys(self, features: dict, source: str) -> dict:
-        """Accept both prefixed ('gsr_scl_mean') and bare ('scl_mean') keys."""
         out = {}
         for k, v in features.items():
             if k in self.feature_cols:
@@ -228,7 +197,6 @@ class ArousalDetector:
         return out
 
     def _normalise_score(self, score: float) -> float:
-        """Map raw score to [0, 1] using the training distribution."""
         lo = self._score_min - self._score_std
         hi = self._score_max
         if hi == lo:
@@ -303,7 +271,6 @@ class EnsembleDetector:
 
     @property
     def feature_cols(self) -> list[str]:
-        """Union of all expected feature columns across sub-detectors."""
         cols = []
         if self.gsr is not None:
             cols.extend(self.gsr.feature_cols)
@@ -316,18 +283,7 @@ class EnsembleDetector:
         features: dict,
         source: str = "unknown",
     ) -> Optional[EnsembleResult]:
-        """
-        Score features from one source (or both, if the dict contains both).
 
-        Typical usage from live capture: one thread calls with source='gsr'
-        and only GSR features; another with source='hrv' and HRV features.
-        In that case only the matching sub-detector scores, and the other
-        source's last cached result is reused so the combined decision
-        reflects the most recent state of both modalities.
-
-        For offline batch scoring a single dict may contain both sources'
-        features — both sub-detectors then score simultaneously.
-        """
         gsr_result: Optional[ArousalResult] = None
         hrv_result: Optional[ArousalResult] = None
 
@@ -385,12 +341,7 @@ class EnsembleDetector:
 
     @staticmethod
     def _extract_for(target_source: str, features: dict, source_hint: str) -> dict:
-        """
-        Pick out features relevant to `target_source`.
 
-        If the dict has prefixed keys ('gsr_scl_mean'), pick those out.
-        Otherwise if the hint matches target_source, pass everything through.
-        """
         prefix = f"{target_source}_"
         prefixed_keys = {k: v for k, v in features.items() if k.startswith(prefix)}
         if prefixed_keys:
@@ -438,21 +389,7 @@ def load_detector(
     ensemble_mode: str = "any",
     mean_threshold: Optional[float] = None,
 ) -> Union[ArousalDetector, EnsembleDetector]:
-    """
-    Load either a single-source model or an ensemble bundle.
 
-    Ensemble bundles live in a directory with a manifest:
-
-        models/ensemble/
-            manifest.json    (points at gsr.pkl, hrv.pkl)
-            gsr.pkl
-            gsr_meta.json
-            hrv.pkl
-            hrv_meta.json
-
-    Accepts the directory, the manifest JSON, or a plain .pkl (the latter
-    returns a single-source ArousalDetector).
-    """
     path = Path(model_path)
 
     if path.is_dir():

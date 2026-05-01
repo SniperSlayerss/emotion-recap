@@ -1,32 +1,3 @@
-"""
-extract_clips.py
-
-Given a session and a trained detector, extract video clips around detected
-high-arousal events.
-
-Works with either the ensemble or the older merged-single-source detector
-(see detect_from_session.py for the detector selection rules). Adjacent
-flagged rows are grouped into events, one clip is extracted per event.
-
-Usage:
-    python extract_clips.py <session_dir> --model <path>
-
-    --pre           Seconds before event start (default: 45)
-    --post          Seconds after event end    (default: 30)
-    --merge-gap     Merge flags within this many seconds into one event
-                    (default: 60). 0 disables merging.
-    --max-duration  Cap clip duration — split long events into chunks
-                    (default: 180)
-    --min-score     Only extract events with peak normalised score >= this
-    --top-n         Only extract the N highest-scoring events
-    --out-dir       Where to put clips (default: <session_dir>/clips/)
-    --reencode      Re-encode clips for frame-accurate cuts
-    --combine-mode  Ensemble combination mode: 'any' | 'all' | 'mean'
-    --mean-threshold  Ensemble 'mean' mode threshold override
-    --pair-tolerance  Seconds between GSR/HRV rows to pair (default: 30)
-    --tolerance     Merge-based single-source model only (default: 20)
-"""
-
 from __future__ import annotations
 
 import argparse
@@ -264,7 +235,7 @@ def main() -> int:
 
     events = merge_events(flags, args.merge_gap)
     events = split_long_events(events, args.max_duration, args.pre, args.post)
-    print(f"[EXTRACT] {len(flags)} flags → {len(events)} event(s) after merge/split")
+    print(f"[EXTRACT] {len(flags)} flags {len(events)} event(s) after merge/split")
 
     events = [e for e in events if e["peak_normalised"] >= args.min_score]
     if args.top_n is not None:
@@ -299,7 +270,7 @@ def main() -> int:
               f"(peak {format_time_human(ev['peak_time_s'])}, "
               f"{ev['n_flags']} flag{'s' if ev['n_flags'] > 1 else ''})")
         print(f"       clip: {format_time_human(start)}–{format_time_human(end)} "
-              f"({dur:.1f}s) → {name}")
+              f"({dur:.1f}s) {name}")
 
         if extract_clip(video_path, start, dur, out_path, args.reencode):
             ok += 1
@@ -325,7 +296,7 @@ def main() -> int:
             writer.writerows(index_rows)
         print(f"\n[EXTRACT] Index saved: {index_path}")
 
-    print(f"[EXTRACT] Done — {ok}/{len(events)} clip(s) extracted to {out_dir}/")
+    print(f"[EXTRACT] Done {ok}/{len(events)} clip(s) extracted to {out_dir}/")
     return 0 if ok == len(events) else 1
 
 

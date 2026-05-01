@@ -420,28 +420,13 @@ def collect_and_extract(adc_channel: int, window_seconds: float = 60.0):
     """
     Read from the Grove GSR sensor and extract features in real time.
     """
-    try:
-        from grove.adc import ADC
+    from grove.adc import ADC
 
-        adc = ADC()
+    adc = ADC()
 
-        class _Sensor:
-            def read(self):
-                return adc.read(adc_channel)
-    except ImportError:
-        print("[gsr] grove.adc not available — using mock sensor for testing.")
-
-        class _Sensor:
-            """Mock sensor that simulates a slowly varying conductance signal."""
-
-            def __init__(self):
-                self._t = 0
-
-            def read(self):
-                self._t += 1
-                base = 300 + 20 * np.sin(self._t / 50)
-                noise = np.random.normal(0, 3)
-                return int(np.clip(base + noise, 0, 1023))
+    class _Sensor:
+        def read(self):
+            return adc.read(adc_channel)
 
     sensor = _Sensor()
     extractor = GSRFeatureExtractor(
@@ -463,7 +448,7 @@ def collect_and_extract(adc_channel: int, window_seconds: float = 60.0):
         print(f"[gsr] buffer: {fill:.0%}", end="\r")
 
         if extractor.window_ready():
-            print("\n[gsr] --- Window complete, extracting features ---")
+            print("\n[gsr] Window complete, extracting features ---")
             features = extractor.extract_features()
             for k, v in features.items():
                 print(f"  {k:<22} {v:.4f}")

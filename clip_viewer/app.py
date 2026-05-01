@@ -1,17 +1,3 @@
-"""
-clip_viewer/app.py
-
-Local web UI for browsing arousal clips by session.
-
-Usage:
-    python app.py [--sessions <path>] [--port <port>]
-
-    --sessions   Root directory containing session folders (default: ../sessions)
-    --port       Port to serve on (default: 5000)
-
-Then open http://localhost:5000 in your browser.
-"""
-
 import argparse
 import json
 from datetime import datetime
@@ -21,11 +7,6 @@ from flask import Flask, abort, jsonify, render_template, send_file
 
 app = Flask(__name__)
 SESSIONS_DIR: Path = Path("../sessions")
-
-
-# ---------------------------------------------------------------------------
-# Data helpers
-# ---------------------------------------------------------------------------
 
 def get_sessions() -> list[dict]:
     """Scan sessions dir and return metadata for all sessions."""
@@ -151,11 +132,6 @@ def serve_audio(session_id, clip_id):
     if not path.exists():
         abort(404)
     return send_file(path, mimetype="audio/wav")
-
-
-# ---------------------------------------------------------------------------
-# Entry point
-# ---------------------------------------------------------------------------
 
 def main():
     parser = argparse.ArgumentParser()

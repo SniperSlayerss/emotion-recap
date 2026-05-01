@@ -1,37 +1,3 @@
-"""
-collect_training_data.py
-
-Capture synchronised GSR + HRV features, audio, and video for arousal model
-training. Optionally runs live Isolation Forest inference on each feature
-window.
-
-Algorithmically unchanged from the original: same sample rates, same window
-sizes, same CSV schema. This cleanup fixes the picam2/cam naming bug,
-removes dead imports, and makes --model accept either a single-source
-.pkl OR an ensemble directory / manifest.
-
-Usage:
-    python collect_training_data.py <gsr_adc_channel> [--label <label>] [--model <path>]
-
-    --model  Path to a trained model artefact. Accepts:
-               - a single-source .pkl  (single ArousalDetector)
-               - an ensemble directory (containing manifest.json)
-               - an ensemble manifest.json directly
-             If omitted, inference is skipped (capture only).
-
-    --combine-mode  When --model is an ensemble: 'any' | 'all' | 'mean'
-                    (default: 'any').
-
-Outputs to ./sessions/<timestamp>_<label>/
-    features.csv   one row per feature window
-                   (GSR or HRV, with live-inference columns if --model set)
-    audio.wav
-    video.mp4      (converted from h264 on exit)
-    session.json   metadata
-
-Ctrl+C to stop cleanly.
-"""
-
 from __future__ import annotations
 
 import asyncio
@@ -125,16 +91,10 @@ class SessionState:
 
 
 def _log_result(source: str, result: Union[ArousalResult, EnsembleResult]) -> None:
-    """Print a single-line summary of a scored window."""
     print(f"[DETECTOR/{source}] {result.summary()}")
 
 
 def _flatten_result(result: Union[ArousalResult, EnsembleResult, None]) -> dict:
-    """
-    Collapse a result into a flat dict of CSV-bound columns. Keeps the same
-    top-level column names the older data used (anomaly_score, is_aroused)
-    while adding per-source ensemble columns where applicable.
-    """
     if result is None:
         return {
             "anomaly_score":      None,

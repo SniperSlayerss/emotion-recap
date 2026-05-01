@@ -1,43 +1,3 @@
-"""
-train_ensemble.py
-
-Train two independent Isolation Forest models — one per source — and bundle
-them into an ensemble artifact. No GSR/HRV window merging is performed.
-
-Each sub-model learns the distribution of its own source's features only,
-so there is no train-time vs inference-time distribution mismatch caused
-by imputing a missing modality.
-
-Usage:
-    # Train on all sessions
-    python train_ensemble.py sessions/
-
-    # Train on sessions with a specific label
-    python train_ensemble.py sessions/ --label baseline_classical
-
-    # Train on sessions whose label starts with a prefix (e.g. baseline_*)
-    python train_ensemble.py sessions/ --label-prefix baseline
-
-    # Custom output directory (contamination/threshold can differ per source)
-    python train_ensemble.py sessions/ \\
-        --out models/ensemble \\
-        --gsr-contamination 0.05 \\
-        --hrv-contamination 0.02
-
-Outputs to the --out directory:
-    manifest.json        Bundle manifest — list of sub-models, combination mode
-    gsr.pkl              GSR StandardScaler + IsolationForest pipeline
-    gsr_meta.json        GSR metadata (features, threshold, training stats)
-    gsr_report.png       GSR diagnostic plot
-    hrv.pkl              HRV pipeline
-    hrv_meta.json        HRV metadata
-    hrv_report.png       HRV diagnostic plot
-    ensemble_report.png  Combined figure showing both training distributions
-
-Load with:
-    detector = load_detector("models/ensemble", ensemble_mode="any")
-"""
-
 from __future__ import annotations
 
 import argparse
@@ -63,7 +23,7 @@ warnings.filterwarnings("ignore", category=UserWarning)
 
 
 # ---------------------------------------------------------------------------
-# Feature columns — must match collect_training_data.py output
+# Feature columns
 # ---------------------------------------------------------------------------
 
 # GSR_FEATURES = [
@@ -202,9 +162,6 @@ def build_source_matrix(
     """
     Extract rows where df['source'] == source, return (X, feature_cols,
     feature_names, session_ids).
-
-    No merging, no imputation — every row is a genuine measurement.
-    Rows with any NaN in this source's feature columns are dropped.
     """
     feature_defs = SOURCES[source]
     feature_cols = [c for c, _ in feature_defs]
@@ -217,8 +174,7 @@ def build_source_matrix(
     if rows.empty:
         return (np.empty((0, 0)), feature_cols, feature_names, np.array([]))
 
-    # Keep only feature columns that are actually present (graceful if older
-    # CSVs are missing some)
+    # Keep only feature columns that are actually present
     available = [c for c in feature_cols if c in rows.columns]
     missing = [c for c in feature_cols if c not in rows.columns]
     if missing:
@@ -294,7 +250,7 @@ def plot_source_report(
 
     fig, axes = plt.subplots(1, 3, figsize=(16, 5))
     fig.suptitle(
-        f"{source.upper()} Isolation Forest — Trained on {X.shape[0]} windows",
+        f"{source.upper()} Isolation Forest Trained on {X.shape[0]} windows",
         fontsize=13,
         fontweight="bold",
     )
@@ -358,7 +314,7 @@ def plot_ensemble_report(
         1, len(per_source), figsize=(7 * len(per_source), 5), squeeze=False
     )
     fig.suptitle(
-        "Ensemble training — per-source score distributions",
+        "Ensemble training per-source score distributions",
         fontsize=13,
         fontweight="bold",
     )
@@ -408,13 +364,9 @@ def train_one_source(
     X, feature_cols, feature_names, _ = build_source_matrix(df_all, source)
 
     if X.shape[0] < 20:
-        print(f"[{source.upper()}] Only {X.shape[0]} window(s) — skipping this source.")
+        print(f"[{source.upper()}] Only {X.shape[0]} window(s)")
         return None
 
-    if X.shape[0] < 100:
-        print(
-            f"[{source.upper()}] WARN: only {X.shape[0]} windows — more data recommended."
-        )
 
     pipe = train_pipeline(X, contamination=contamination, n_estimators=n_estimators)
     threshold = compute_threshold(pipe, X, percentile=threshold_pct)
@@ -471,12 +423,6 @@ def train_one_source(
         "scores": scores,
         "n_windows": int(X.shape[0]),
     }
-
-
-# ---------------------------------------------------------------------------
-# Main
-# ---------------------------------------------------------------------------
-
 
 def main() -> int:
     p = argparse.ArgumentParser(

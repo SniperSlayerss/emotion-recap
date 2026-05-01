@@ -35,3 +35,24 @@ Enable I2C interface
 ```
 uv venv --system-site-packages
 ```
+
+# Caputring data
+```
+python collect_training_data.py <gsr_adc_channel> [--label <label>] [--model <path>]
+```
+--model  Path to a trained model
+--combine-mode 'any' | 'all' | 'mean' (default: 'any').
+Sessions output to to ./sessions/<timestamp>_<label>/
+
+# Running model
+Look at run_ensemble.sh
+
+# Clip Viewer
+```
+python app.py [--sessions <path>] [--port <port>]
+
+```
+--sessions   Root directory containing session folders (default: ../sessions)
+--port       Port to serve on (default: 5000)
+
+Then open http://localhost:5000 in your browser.

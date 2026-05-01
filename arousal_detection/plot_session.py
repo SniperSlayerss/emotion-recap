@@ -1,45 +1,3 @@
-"""
-plot_session.py
-
-Generate diagnostic plots for a recorded session, optionally overlaying
-live arousal detection from the trained Isolation Forest.
-
-Supports both detector types:
-    * Ensemble directory / manifest (train_ensemble.py output) — default.
-      GSR rows are scored by the GSR sub-model, HRV rows by the HRV
-      sub-model. The per-source flags are combined per `--combine-mode`
-      to produce the overlays on the mixed plots.
-    * Single-source / merged .pkl (train_model.py / retrain_baseline.py
-      output) — kept for comparison. Each row is scored as-is.
-
-Usage:
-    python plot_session.py <path> [--model <path>] [--combine-mode MODE]
-
-    <path> can be:
-      - A single session directory  (contains features.csv)
-      - A parent directory whose sub-folders are sessions
-
-    --model          Optional. Ensemble dir / manifest.json / single .pkl.
-                     If supplied, every plot gets arousal flag overlays and
-                     plot 07 (arousal timeline) is added.
-    --combine-mode   Ensemble combination mode: 'any' | 'all' | 'mean'
-                     (default: 'any'). Ignored for single-source models.
-    --mean-threshold For 'mean' mode: override the combined threshold.
-
-Reads:
-    <session_dir>/features.csv
-    <session_dir>/session.json   (optional, for metadata)
-
-Saves to <session_dir>/plots/:
-    01_gsr_overview.png      — SCL mean, SCR count, phasic std over time
-    02_gsr_quality.png       — SCR amplitude, rise time, recovery time
-    03_hrv_overview.png      — HR mean/min/max, RMSSD, SDNN over time
-    04_hrv_poincare.png      — Poincaré-style SD1 vs SD2 scatter
-    05_data_quality.png      — Feature counts, source timeline, missing data
-    06_combined_arousal.png  — Key GSR + HRV features on shared time axis
-    07_arousal_timeline.png  — (with --model) arousal score + flagged windows
-"""
-
 import argparse
 import sys
 import json
@@ -115,23 +73,6 @@ def score_session_df(
     combine_mode: str = "any",
     mean_threshold: Optional[float] = None,
 ) -> pd.DataFrame:
-    """
-    Run every row of features.csv through the trained detector.
-
-    Accepts both detector artefact types:
-      * Ensemble bundle (directory or manifest.json) — GSR rows scored by
-        the GSR sub-model, HRV rows by the HRV sub-model. The combined
-        flag (per `combine_mode`) is written back to each row via pairing
-        on the timeline (see session_scoring.combined_timeline).
-      * Single-source / merged .pkl — each row is scored as-is.
-
-    Returns a copy of df with these added columns:
-        _score        raw Isolation Forest score for this row
-        _normalised   normalised score in [0, 1]
-        _is_aroused   combined flag (True if considered aroused)
-        _threshold    flag threshold for context (raw-score units where
-                      applicable; NaN for the ensemble 'mean' mode)
-    """
     from arousal_detector import (
         ArousalDetector,
         EnsembleDetector,
@@ -236,9 +177,6 @@ def score_session_df(
                 if key in key_to_flag:
                     out.at[i, "_is_aroused"] = key_to_flag[key]
 
-    # ------------------------------------------------------------------
-    # SINGLE-SOURCE / MERGED path
-    # ------------------------------------------------------------------
     else:
         assert isinstance(detector, ArousalDetector)
         for i, row in df.iterrows():
@@ -259,19 +197,12 @@ def score_session_df(
     return out
 
 
-# Backwards-compat alias — old name, single-source behaviour only.
 def score_session(df: pd.DataFrame, model_path: Path) -> pd.DataFrame:
     """Deprecated: use score_session_df() with explicit combine_mode."""
     return score_session_df(df, model_path, combine_mode="any")
 
 
 def shade_aroused(ax, scored: pd.DataFrame, source: Optional[str] = None) -> int:
-    """
-    Add a light red vertical band at every flagged window on the given axis.
-    If `source` is given, only shade flags from that source (gsr/hrv).
-    Returns the number of bands drawn (so the caller can decide whether to
-    add a legend entry).
-    """
     if scored is None or scored.empty:
         return 0
 
@@ -281,8 +212,6 @@ def shade_aroused(ax, scored: pd.DataFrame, source: Optional[str] = None) -> int
     if rows.empty:
         return 0
 
-    # Figure out a sensible band width. For GSR we typically score every
-    # window (~60s); HRV windows step every 30s. Use half the median gap.
     if len(rows) > 1:
         times_min = rows["window_start_time"].values / 60.0
         median_gap = float(np.median(np.diff(np.sort(times_min))))
@@ -313,9 +242,8 @@ def add_arousal_legend_entry(ax, count: int, source_label: str = "all") -> None:
 
 
 # ---------------------------------------------------------------------------
-# Plot 1 — GSR overview
+# Plot 1 GSR overview
 # ---------------------------------------------------------------------------
-
 
 def plot_gsr_overview(
     gsr: pd.DataFrame,
@@ -330,7 +258,7 @@ def plot_gsr_overview(
     t = time_col(gsr)
     fig, axes = plt.subplots(3, 1, figsize=(12, 9), sharex=True)
     fig.suptitle(
-        "GSR Overview — Skin Conductance Level & Responses",
+        "GSR Overview Skin Conductance Level & Responses",
         fontsize=14,
         fontweight="bold",
     )
@@ -394,7 +322,7 @@ def plot_gsr_overview(
 
 
 # ---------------------------------------------------------------------------
-# Plot 2 — GSR quality
+# Plot 2 GSR quality
 # ---------------------------------------------------------------------------
 
 
@@ -410,7 +338,7 @@ def plot_gsr_quality(
     t = time_col(gsr)
     fig, axes = plt.subplots(3, 1, figsize=(12, 9), sharex=True)
     fig.suptitle(
-        "GSR Data Quality — SCR Timing & Amplitude", fontsize=14, fontweight="bold"
+        "GSR Data Quality SCR Timing & Amplitude", fontsize=14, fontweight="bold"
     )
 
     # SCR amplitude
@@ -483,7 +411,7 @@ def plot_hrv_overview(
     t = time_col(hrv)
     fig, axes = plt.subplots(3, 1, figsize=(12, 9), sharex=True)
     fig.suptitle(
-        "HRV Overview — Heart Rate & Variability", fontsize=14, fontweight="bold"
+        "HRV Overview Heart Rate & Variability", fontsize=14, fontweight="bold"
     )
 
     # HR band
@@ -545,7 +473,7 @@ def plot_hrv_poincare(
     t = time_col(hrv)
 
     fig, axes = plt.subplots(1, 2, figsize=(13, 5))
-    fig.suptitle("HRV Poincaré Analysis — SD1 vs SD2", fontsize=14, fontweight="bold")
+    fig.suptitle("HRV Poincare Analysis SD1 vs SD2", fontsize=14, fontweight="bold")
 
     # Figure out which HRV rows were flagged (same index as `hrv`)
     flagged_mask = np.zeros(len(hrv), dtype=bool)
@@ -554,7 +482,6 @@ def plot_hrv_poincare(
         if len(hrv_scored) == len(hrv):
             flagged_mask = hrv_scored["_is_aroused"].fillna(False).to_numpy()
 
-    # Scatter SD1 vs SD2 — colour by time, highlight flagged ones with a red ring
     ax = axes[0]
     sc = ax.scatter(hrv["hrv_sd1"], hrv["hrv_sd2"], c=t, cmap="viridis", s=60, zorder=3)
     if flagged_mask.any():
@@ -592,7 +519,7 @@ def plot_hrv_poincare(
 
 
 # ---------------------------------------------------------------------------
-# Plot 5 — Data quality dashboard
+# Plot 5 Data quality dashboard
 # ---------------------------------------------------------------------------
 
 
@@ -603,7 +530,6 @@ def plot_data_quality(
     fig.suptitle("Data Quality Dashboard", fontsize=14, fontweight="bold")
     gs = gridspec.GridSpec(2, 3, figure=fig, hspace=0.45, wspace=0.4)
 
-    # --- 1. Window count bar ---
     ax = fig.add_subplot(gs[0, 0])
     counts = df["source"].value_counts()
     bars = ax.bar(
@@ -702,7 +628,7 @@ def plot_combined(
 
     fig, axes = plt.subplots(3, 1, figsize=(13, 10), sharex=True)
     fig.suptitle(
-        "Combined GSR + HRV — Arousal Proxy Overview", fontsize=14, fontweight="bold"
+        "Combined GSR + HRV Arousal Proxy Overview", fontsize=14, fontweight="bold"
     )
 
     # SCL + HR on same axis (dual y)
@@ -752,7 +678,7 @@ def plot_combined(
         ax3.tick_params(axis="y", labelcolor=PURPLE)
     ax.set_ylabel("SCR count/min", color=ORANGE)
     ax.tick_params(axis="y", labelcolor=ORANGE)
-    ax.set_title("SCR Rate vs RMSSD (both ↑ = higher arousal from sympathetic drive)")
+    ax.set_title("SCR Rate vs RMSSD (both higher = higher arousal from sympathetic drive)")
     ax.grid(True, alpha=0.3, axis="y")
     n = shade_aroused(ax, scored, source=None)
     lines_a, labels_a = ax.get_legend_handles_labels()
@@ -795,23 +721,17 @@ def plot_combined(
 
 
 # ---------------------------------------------------------------------------
-# Plot 7 — Arousal timeline (only when a model is supplied)
+# Plot 7 Arousal timeline
 # ---------------------------------------------------------------------------
 
 
 def plot_arousal_timeline(scored: pd.DataFrame, plots_dir: Path, meta: dict) -> None:
-    """
-    A dedicated arousal plot:
-      - Top:   raw anomaly score over time, per source, with threshold
-      - Mid:   normalised [0,1] score, smoothed, flagged windows shaded
-      - Bottom: flag strip + peak markers
-    """
     if scored is None or scored.empty:
         return
 
     valid = scored[scored["_score"].notna()].copy()
     if valid.empty:
-        print("  [SKIP] No scored windows (model rejected all — likely missing features).")
+        print("  [SKIP] No scored windows (model rejected all).")
         return
 
     valid["t_min"] = valid["window_start_time"] / 60.0
@@ -831,12 +751,11 @@ def plot_arousal_timeline(scored: pd.DataFrame, plots_dir: Path, meta: dict) -> 
 
     fig = plt.figure(figsize=(14, 10))
     fig.suptitle(
-        f"Arousal Detection Timeline — {n_flagged} flagged window(s) over {duration_min:.1f} min",
+        f"Arousal Detection Timeline {n_flagged} flagged window(s) over {duration_min:.1f} min",
         fontsize=14, fontweight="bold",
     )
     gs = gridspec.GridSpec(3, 1, figure=fig, height_ratios=[3, 3, 1], hspace=0.35)
 
-    # --- (a) Raw score by source ---
     ax = fig.add_subplot(gs[0])
     for src, colour in [("gsr", BLUE), ("hrv", RED)]:
         sub = valid[valid["source"] == src]
@@ -851,7 +770,6 @@ def plot_arousal_timeline(scored: pd.DataFrame, plots_dir: Path, meta: dict) -> 
                        s=80, facecolors="none", edgecolors=AROUSED,
                        lw=2, zorder=5)
 
-    # Threshold line(s) — one per source if they differ
     if single_threshold:
         t = next(iter(thresholds_by_source.values()))
         ax.axhline(t, color=AROUSED, ls="--", lw=1.5,
@@ -867,9 +785,8 @@ def plot_arousal_timeline(scored: pd.DataFrame, plots_dir: Path, meta: dict) -> 
     ax.set_title("Raw Isolation Forest score — points below the dashed line are flagged")
     ax.legend(fontsize=8, loc="lower right")
     ax.grid(True, alpha=0.3)
-    ax.invert_yaxis()  # So "higher" on the plot = higher arousal
+    ax.invert_yaxis()
 
-    # --- (b) Normalised score with smoothing ---
     ax = fig.add_subplot(gs[1])
 
     # Shade flagged windows
@@ -893,17 +810,16 @@ def plot_arousal_timeline(scored: pd.DataFrame, plots_dir: Path, meta: dict) -> 
     ax.set_ylim(-0.02, 1.05)
     ax.set_ylabel("Normalised arousal\n(0 = baseline, 1 = peak)")
     ax.set_xlabel("Session time (minutes)")
-    ax.set_title("Normalised arousal score — red shading marks flagged windows")
+    ax.set_title("Normalised arousal score red shading marks flagged windows")
     ax.legend(fontsize=8, loc="upper right")
     ax.grid(True, alpha=0.3)
 
-    # --- (c) Flag strip + top 5 peak annotations ---
     ax = fig.add_subplot(gs[2])
     ax.set_xlim(0, duration_min * 1.02 if duration_min > 0 else 1)
     ax.set_ylim(0, 1)
     ax.set_yticks([])
     ax.set_xlabel("Session time (minutes)")
-    ax.set_title("Flagged window strip (↓ arrows mark top 5 peaks)")
+    ax.set_title("Flagged window strip")
 
     for _, row in valid.iterrows():
         if row["_is_aroused"]:
@@ -911,7 +827,6 @@ def plot_arousal_timeline(scored: pd.DataFrame, plots_dir: Path, meta: dict) -> 
             ax.axvspan(row["t_min"] - 0.1, row["t_min"] + 0.1,
                        color=src_colour, alpha=0.6)
 
-    # Top 5 peaks by normalised score
     flagged = valid[valid["_is_aroused"] == True]  # noqa: E712
     if not flagged.empty:
         top = flagged.nlargest(min(5, len(flagged)), "_normalised")
@@ -1023,7 +938,7 @@ def plot_session(
         plot_arousal_timeline(scored, plots_dir, meta)
 
     print(
-        f"\n[PLOT] Done — {len(list(plots_dir.glob('*.png')))} plots saved to {plots_dir}/"
+        f"\n[PLOT] Done {len(list(plots_dir.glob('*.png')))} plots saved to {plots_dir}/"
     )
 
 
@@ -1064,13 +979,7 @@ def plot_all_sessions(
         except Exception as e:
             print(f"  [ERROR] Failed on {sd.name}: {e}")
 
-    print(f"\n[BATCH] Finished — processed {len(session_dirs)} session(s).\n")
-
-
-# ---------------------------------------------------------------------------
-# CLI
-# ---------------------------------------------------------------------------
-
+    print(f"\n[BATCH] Finished processed {len(session_dirs)} session(s).\n")
 
 def main():
     parser = argparse.ArgumentParser(

@@ -1,52 +1,3 @@
-"""
-analyse_results.py
-
-End-to-end analysis for the arousal-detection results chapter.
-
-Inputs:
-    sessions/      Parent directory of recorded sessions. Each session is
-                   labelled by prefix (default: 'baseline' = negative class,
-                   anything else = positive class - but see --positive-prefix).
-    --model        Path to a trained detector (ensemble bundle or .pkl).
-
-Outputs to <out>/ :
-    figures/
-        02_feature_violins.png         baseline characterisation (§5.2)
-        02_pca_projection.png          2D feature-space projection (§5.2)
-        02_loso_shifts.png             leave-one-session-out bar chart (§5.2)
-        03_score_distributions.png     HEADLINE: baseline vs aroused overlay (§5.3)
-        03_roc_curve.png               ROC with AUC (§5.3)
-        03_pr_curve.png                PR with AUC (§5.3)
-        03_ablation_roc.png            GSR-only / HRV-only / combined (§5.3)
-        03_threshold_sweep.png         precision / recall vs threshold (§5.3)
-        03_per_session_breakdown.png   per-session flag-rate / score bars (§5.3)
-        03_hero_timeseries.png         score over time for best aroused session (§5.3)
-        04_latency_hist.png            score() call latency (§5.4)
-
-    tables/
-        02_data_summary.csv            per-session row counts, data-quality stats
-        02_loso_shifts.csv
-        03_metrics.csv                 AUC / PR-AUC / precision@recall / latency
-        03_ablation_metrics.csv        AUC etc. for GSR / HRV / combined on paired windows
-        03_ablation_full_coverage.csv  AUC etc. on all single-modality windows
-        03_per_session.csv             per-session: flag rate, score stats
-        03_confusion_at_operating_pt.csv
-
-    scored_windows.csv                 every window with label + score (for reproducibility)
-    summary.json                       headline metrics + bullet points (§5.6)
-    report.md                          human-readable summary that embeds the figures
-
-Usage:
-    python analyse_results.py sessions/ --model models/ensemble
-    python analyse_results.py sessions/ --model models/iforest.pkl
-    python analyse_results.py sessions/ --model models/ensemble \\
-        --baseline-prefix baseline --out results/run_2026_04
-
-By default every session whose label does NOT start with --baseline-prefix is
-treated as positive (aroused). Use --positive-prefix to restrict that further
-(e.g. 'horror' to exclude 'unknown' / test sessions from the positive class).
-"""
-
 from __future__ import annotations
 
 import argparse
@@ -119,7 +70,6 @@ PURPLE = "#B279A2"
 
 @dataclass
 class Session:
-    """One session on disk, with its ground-truth label."""
     dir:      Path
     label:    str
     is_aroused: bool  # ground truth at session level
@@ -134,7 +84,6 @@ def discover_sessions(
     baseline_prefix: str,
     positive_prefix: Optional[str],
 ) -> list[Session]:
-    """Walk the parent dir, classify each session by its label prefix."""
     if not parent.is_dir():
         sys.exit(f"[ERROR] Not a directory: {parent}")
 
@@ -178,11 +127,6 @@ def score_all_sessions(
 ) -> pd.DataFrame:
     """
     Score every window of every session with the supplied detector.
-
-    Returns a long-form DataFrame with columns:
-        session, label, y_true (0|1), source, time_s,
-        score, normalised, is_aroused (the detector's own flag),
-        scored
     """
     frames = []
 
@@ -235,7 +179,7 @@ def score_all_sessions(
 
 
 # ---------------------------------------------------------------------------
-# §5.2  Baseline characterisation
+# Baseline characterisation
 # ---------------------------------------------------------------------------
 
 
@@ -307,7 +251,7 @@ def plot_feature_violins(
     fig.tight_layout(rect=[0, 0.03, 1, 0.97])
     fig.savefig(out_path, dpi=140, bbox_inches="tight")
     plt.close(fig)
-    print(f"[02] Feature violins → {out_path.name}")
+    print(f"[02] Feature violins: {out_path.name}")
 
 
 def plot_pca_projection(
@@ -362,7 +306,7 @@ def plot_pca_projection(
     fig.tight_layout()
     fig.savefig(out_path, dpi=140, bbox_inches="tight")
     plt.close(fig)
-    print(f"[02] PCA projection → {out_path.name}")
+    print(f"[02] PCA projection: {out_path.name}")
 
 
 def compute_loso_shifts(
@@ -430,7 +374,7 @@ def compute_loso_shifts(
 
 def plot_loso_shifts(df: pd.DataFrame, out_path: Path) -> None:
     if df.empty:
-        print("[02] LOSO skipped (need ≥2 baseline sessions)")
+        print("[02] LOSO skipped (need >=2 baseline sessions)")
         return
 
     fig, ax = plt.subplots(figsize=(12, max(4, len(df) * 0.35)))
@@ -460,7 +404,7 @@ def plot_loso_shifts(df: pd.DataFrame, out_path: Path) -> None:
     fig.tight_layout()
     fig.savefig(out_path, dpi=140, bbox_inches="tight")
     plt.close(fig)
-    print(f"[02] LOSO shifts → {out_path.name}")
+    print(f"[02] LOSO shifts: {out_path.name}")
 
 
 def compute_data_summary(sessions: list[Session]) -> pd.DataFrame:
@@ -501,7 +445,7 @@ def compute_data_summary(sessions: list[Session]) -> pd.DataFrame:
 
 
 # ---------------------------------------------------------------------------
-# §5.3  Arousal detection performance
+# Arousal detection performance
 # ---------------------------------------------------------------------------
 
 
@@ -614,7 +558,7 @@ def plot_pr(metrics: dict, out_path: Path) -> None:
 
 
 # ---------------------------------------------------------------------------
-# §5.3 Ablation - uses the trained ensemble sub-models, strict pairing
+# Ablation
 # ---------------------------------------------------------------------------
 
 
@@ -1003,7 +947,7 @@ def compute_confusion_at(scored: pd.DataFrame, threshold: float) -> pd.DataFrame
 
 
 # ---------------------------------------------------------------------------
-# §5.4  Real-time system performance (latency)
+# Real-time system performance (latency)
 # ---------------------------------------------------------------------------
 
 
@@ -1133,7 +1077,7 @@ def write_report(
     lines.append(f"- Sessions: **{len(sessions)}** total - {n_base} baseline, {n_pos} aroused")
     lines.append(f"- Scored windows: **{len(scored)}**")
     lines.append(f"")
-    lines.append(f"## §5.3 Headline metrics")
+    lines.append(f"## Headline metrics")
     if "error" not in metrics:
         lines.append(f"- **ROC-AUC**: {metrics['roc_auc']:.3f}")
         lines.append(f"- **PR-AUC**:  {metrics['pr_auc']:.3f}")
@@ -1147,7 +1091,7 @@ def write_report(
     lines.append(f"![ROC](figures/03_roc_curve.png)")
     lines.append(f"![PR](figures/03_pr_curve.png)")
     lines.append(f"")
-    lines.append(f"## §5.3 Ablation (paired windows - like-for-like comparison)")
+    lines.append(f"## Ablation")
     if not ablation_metrics.empty:
         lines.append(f"")
         lines.append(f"All three variants evaluated on the IDENTICAL set of "
@@ -1161,7 +1105,7 @@ def write_report(
     lines.append(f"![Ablation ROC](figures/03_ablation_roc.png)")
     lines.append(f"")
     if not full_coverage_metrics.empty:
-        lines.append(f"### §5.3 Full-coverage per-source performance (secondary)")
+        lines.append(f"### Full-coverage per-source performance (secondary)")
         lines.append(f"")
         lines.append(f"Each sub-model evaluated on ALL of its own source's "
                      f"windows (including single-modality windows not in the "
@@ -1172,15 +1116,15 @@ def write_report(
                                             "pr_auc", "precision_at_recall_0p8"]]
                      .to_markdown(index=False, floatfmt=".3f"))
         lines.append(f"")
-    lines.append(f"## §5.3 Per-session breakdown")
+    lines.append(f"## Per-session breakdown")
     lines.append(per_session.to_markdown(index=False, floatfmt=".3f"))
     lines.append(f"")
     lines.append(f"![Per-session](figures/03_per_session_breakdown.png)")
     lines.append(f"")
-    lines.append(f"## §5.3 Hero timeseries")
+    lines.append(f"## Hero timeseries")
     lines.append(f"![Hero](figures/03_hero_timeseries.png)")
     lines.append(f"")
-    lines.append(f"## §5.2 Baseline characterisation")
+    lines.append(f"## Baseline characterisation")
     lines.append(f"![Violins](figures/02_feature_violins.png)")
     lines.append(f"![PCA](figures/02_pca_projection.png)")
     lines.append(f"")
@@ -1192,7 +1136,7 @@ def write_report(
         lines.append(f"![LOSO](figures/02_loso_shifts.png)")
         lines.append(f"")
     if latency:
-        lines.append(f"## §5.4 Real-time performance")
+        lines.append(f"## Real-time performance")
         lines.append(f"- Calls timed: {latency['n_calls']}")
         lines.append(f"- mean: {latency['mean_ms']:.2f} ms, "
                      f"p95: {latency['p95_ms']:.2f} ms, "
@@ -1201,7 +1145,7 @@ def write_report(
         lines.append(f"![Latency](figures/04_latency_hist.png)")
         lines.append(f"")
 
-    lines.append(f"## §5.6 Summary bullets")
+    lines.append(f"## Summary bullets")
     if "error" not in metrics:
         base_mean = float(scored[scored.y_true == 0]["normalised"].mean())
         pos_mean  = float(scored[scored.y_true == 1]["normalised"].mean())
@@ -1267,8 +1211,7 @@ def main() -> int:
     # --- Load detector ---
     detector = load_detector(args.model, ensemble_mode=args.combine_mode)
 
-    # --- §5.2 Baseline characterisation ---
-    print("\n=== §5.2 Baseline characterisation ===")
+    print("\n=== Baseline characterisation ===")
     plot_feature_violins(sessions, out / "figures/02_feature_violins.png")
     plot_pca_projection(sessions, out / "figures/02_pca_projection.png")
 
@@ -1286,8 +1229,8 @@ def main() -> int:
     scored = score_all_sessions(sessions, detector, args.combine_mode)
     scored.to_csv(out / "scored_windows.csv", index=False)
 
-    # --- §5.3 Arousal detection ---
-    print("\n=== §5.3 Arousal detection ===")
+    # --- Arousal detection ---
+    print("\n=== Arousal detection ===")
     plot_score_distributions(scored, out / "figures/03_score_distributions.png")
 
     metrics = compute_roc_pr(scored)
@@ -1302,8 +1245,7 @@ def main() -> int:
         out / "tables/03_metrics.csv", index=False,
     )
 
-    # Ablation - uses the ALREADY-TRAINED sub-models, strict pairing
-    print("\n=== §5.3 Ablation (from trained ensemble) ===")
+    print("\n=== Ablation (from trained ensemble) ===")
     ablation, ablation_metrics, full_coverage_metrics = run_ablation_from_trained(
         sessions, detector, pair_tolerance_s=args.pair_tolerance_s,
     )
@@ -1325,8 +1267,7 @@ def main() -> int:
 
     plot_hero_timeseries(scored, out / "figures/03_hero_timeseries.png")
 
-    # --- §5.4 Latency ---
-    print("\n=== §5.4 Latency ===")
+    print("\n===  Latency ===")
     latency = measure_latency(sessions, detector, n_calls=args.latency_calls)
     plot_latency(latency, out / "figures/04_latency_hist.png")
     if latency:

@@ -1,31 +1,3 @@
-"""
-session_scoring.py
-
-Shared helpers for scoring a recorded session against a trained detector.
-
-Two scoring paths are supported:
-
-    Merge-based  (score_session_file)
-        Pairs each GSR row with its nearest-in-time HRV row within
-        `tolerance_s` seconds, then scores the merged 8-feature vector
-        against a single-source detector whose feature_cols span both
-        gsr_* and hrv_* columns (i.e. one of the older merged models
-        from train_model.py / retrain_baseline.py).
-
-        Kept for comparison with the ensemble approach. Requires both
-        sources to have windows within tolerance of each other, which
-        tends to drop a lot of data.
-
-    Ensemble-based  (score_session_ensemble)
-        Scores every GSR row and every HRV row independently against
-        their respective sub-models in an EnsembleDetector. No pairing,
-        no imputation, no dropped rows. Combined decisions are produced
-        downstream by combined_timeline() using 'any' / 'all' / 'mean'.
-
-The top-level `score_session()` dispatches based on detector type so
-callers don't have to branch.
-"""
-
 from __future__ import annotations
 
 from pathlib import Path
@@ -136,10 +108,7 @@ def score_merged_row(
     row: pd.Series,
     detector: ArousalDetector,
 ) -> Optional[ArousalResult]:
-    """
-    Score one merged row with a single-source detector whose features span
-    both modalities. Returns None if any expected feature is missing.
-    """
+
     features = {}
     for col in detector.feature_cols:
         v = _to_float(row.get(col))
@@ -154,10 +123,7 @@ def score_session_file(
     detector: ArousalDetector,
     tolerance_s: float = DEFAULT_MERGE_TOLERANCE_S,
 ) -> pd.DataFrame:
-    """
-    Merge-based end-to-end scoring. Returns columns:
-        time_s, hrv_time_s, match_gap_s, score, normalised, is_aroused, scored
-    """
+
     df = pd.read_csv(csv_path)
     merged = merge_gsr_hrv(df, tolerance_s=tolerance_s)
 
@@ -188,7 +154,7 @@ def score_session_file(
 
 
 # ===========================================================================
-# Ensemble scoring (recommended)
+# Ensemble scoring
 # ===========================================================================
 
 
@@ -244,14 +210,7 @@ def score_session_ensemble(
     csv_path: Path,
     detector: EnsembleDetector,
 ) -> pd.DataFrame:
-    """
-    Score every GSR row against the GSR sub-model and every HRV row against
-    the HRV sub-model. Returns a long-form DataFrame (one row per scored
-    window) sorted by time.
 
-    Columns:
-        time_s, source, score, normalised, is_aroused, scored
-    """
     df = pd.read_csv(csv_path)
 
     frames = []
@@ -275,21 +234,7 @@ def combined_timeline(
     pair_tolerance_s: float = 30.0,
     mean_threshold: float = 0.5,
 ) -> pd.DataFrame:
-    """
-    Collapse the long-form (one row per source) scored output into a single
-    timeline suitable for clip extraction and reports.
 
-    mode:
-      'any'  — emit every scored row as-is; is_aroused is the per-source flag.
-      'all'  — walk the timeline, pair GSR and HRV rows within
-               `pair_tolerance_s` of each other, flag only when both agree.
-               Unpaired rows remain but are never flagged.
-      'mean' — pair as in 'all', flag if mean(normalised) >= mean_threshold.
-
-    Returns columns (same order):
-        time_s, source, score, normalised, is_aroused, paired_with
-    where paired_with is the partner row's time_s or NaN.
-    """
     if scored_rows.empty:
         return scored_rows.assign(paired_with=pd.Series(dtype=float))
 
@@ -352,18 +297,7 @@ def score_session(
     detector: Union[ArousalDetector, EnsembleDetector],
     **kwargs,
 ) -> pd.DataFrame:
-    """
-    Score a session with whichever detector type was loaded.
 
-    For an EnsembleDetector this returns the long-form output of
-    score_session_ensemble(); the caller can then pass it through
-    combined_timeline() if they want a single-flag timeline.
-
-    For an ArousalDetector this returns:
-      - merge-based output if the detector expects both gsr_* and hrv_*
-        features (old merged model)
-      - single-source output otherwise
-    """
     if isinstance(detector, EnsembleDetector):
         return score_session_ensemble(csv_path, detector)
 

@@ -1,27 +1,3 @@
-"""
-fix_fps.py
-
-Re-encode session videos at the correct framerate.
-
-The capture script told ffmpeg the videos were 10 fps, but Picamera2 was
-actually capturing at its default rate (~30 fps). So playback is 3× too
-fast. This script uses the known session duration (from session.json) to
-figure out the true framerate, then re-encodes at that rate.
-
-The SPS headers in the original h264 stream have the wrong fps baked in,
-so `-c copy` inherits the wrong timing. Re-encoding rebuilds the bitstream
-with fresh timestamps (takes 1–3 min per session but is the only robust fix).
-
-Usage:
-    python fix_fps.py <parent_dir>                # dry-run, shows plan
-    python fix_fps.py <parent_dir> --apply        # actually fix
-
-    python fix_fps.py <single_session> --apply    # one session
-
-    --backup        Keep original as video_original.mp4 (default: on)
-    --no-backup     Overwrite original without backup
-"""
-
 import argparse
 import json
 import shutil
@@ -78,10 +54,6 @@ def video_info(path: Path) -> tuple[int | None, float | None]:
 
 
 def plan_session(session_dir: Path) -> dict | None:
-    """
-    Work out what to do for one session.
-    Returns a plan dict or None if session can't be fixed.
-    """
     mp4  = session_dir / "video.mp4"
     h264 = session_dir / "video.h264"
     meta = session_dir / "session.json"
@@ -122,7 +94,7 @@ def plan_session(session_dir: Path) -> dict | None:
 
 
 def apply_fix(plan: dict, backup: bool) -> bool:
-    """Re-mux the source at the correct fps. Returns True on success."""
+    """Re-mux the source at the correct fps. Return True on success."""
     session_dir = plan["dir"]
     source      = plan["source"]
     true_fps    = plan["true_fps"]
@@ -133,7 +105,7 @@ def apply_fix(plan: dict, backup: bool) -> bool:
         backup_path = session_dir / "video_original.mp4"
         if not backup_path.exists():
             shutil.copy2(target, backup_path)
-            print(f"    Backed up existing mp4 → {backup_path.name}")
+            print(f"    Backed up existing mp4 {backup_path.name}")
 
     if backup and source == target:
         # Re-muxing the mp4 itself — must back up first
@@ -141,7 +113,7 @@ def apply_fix(plan: dict, backup: bool) -> bool:
         if not backup_path.exists():
             shutil.move(target, backup_path)
             source = backup_path
-            print(f"    Backed up original → {backup_path.name}")
+            print(f"    Backed up original {backup_path.name}")
         else:
             source = backup_path
 
@@ -162,14 +134,14 @@ def apply_fix(plan: dict, backup: bool) -> bool:
         "-movflags", "+faststart",   # playable before fully downloaded
         str(tmp_out),
     ]
-    print(f"    Re-encoding at {true_fps:.2f} fps (this takes ~1-3 min)...")
+    print(f"    Re-encoding at {true_fps:.2f} fps...")
     result = subprocess.run(cmd, capture_output=True, text=True)
     if result.returncode != 0:
         print(f"    [FAIL] ffmpeg error:\n{result.stderr[-800:]}")
         return False
 
     tmp_out.replace(target)
-    print(f"    [OK] Re-encoded at {true_fps:.2f} fps → {target.name}")
+    print(f"    [OK] Re-encoded at {true_fps:.2f} fps {target.name}")
     return True
 
 
@@ -246,7 +218,7 @@ def main() -> int:
         if apply_fix(plan, backup=args.backup):
             ok += 1
 
-    print(f"\n[FPS-FIX] Done — {ok}/{len(fixable)} fixed.")
+    print(f"\n[FPS-FIX] Done {ok}/{len(fixable)} fixed.")
     return 0 if ok == len(fixable) else 1
 
 

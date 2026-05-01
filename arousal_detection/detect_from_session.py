@@ -1,32 +1,3 @@
-"""
-detect_from_session.py
-
-Load a recorded session and list every window flagged as high-arousal.
-
-Works with both detector types:
-    * Ensemble (recommended)     — a models/ensemble/ directory or
-                                   manifest.json. Scores GSR and HRV
-                                   independently, combines with
-                                   --combine-mode.
-    * Single-source (comparison) — a plain .pkl (an old merged model that
-                                   expects both gsr_* and hrv_* features,
-                                   or a per-source model). Uses the merge
-                                   pipeline in session_scoring.py when
-                                   appropriate.
-
-Usage:
-    python detect_from_session.py <session_dir> --model <path>
-
-    --min-score      Only show rows with normalised score >= this (default: 0.0)
-    --all            Show every scored row, not just flagged ones
-    --combine-mode   For an ensemble: 'any' | 'all' | 'mean' (default: 'any')
-    --mean-threshold For 'mean' mode: threshold on combined normalised score
-    --pair-tolerance Seconds between GSR and HRV rows to consider paired
-                     under 'all' / 'mean' modes (default: 30)
-    --tolerance      Merge-based only: max seconds gap between GSR/HRV
-                     for single-source merged models (default: 20)
-"""
-
 from __future__ import annotations
 
 import argparse
@@ -225,7 +196,7 @@ def main() -> int:
         kind = "single (merged)" if is_merged else f"single ({detector.source})"
         print(f"Mode    : {kind}")
         if is_merged:
-            print(f"Merge tol: ±{args.tolerance:.0f}s between GSR/HRV windows")
+            print(f"Merge tol: +-{args.tolerance:.0f}s between GSR/HRV windows")
         print_single_source_report(results, args.min_score, args.all, is_merged)
 
     return 0

@@ -33,21 +33,18 @@ class HRVFeatures:
     HRV features for one window.
     Time-domain features match standard HRV guidelines (Task Force, 1996).
     """
-    # HR stats (from the HR byte, bpm)
-    hr_mean: float          # Mean HR over window
-    hr_std: float           # HR variability
+    hr_mean: float
+    hr_std: float
     hr_min: float
     hr_max: float
 
-    # Time-domain HRV (from RR intervals, ms)
-    rmssd: float            # Root mean square of successive differences — parasympathetic index
-    sdnn: float             # Std dev of all RR intervals — overall HRV
-    pnn50: float            # Proportion of successive diffs > 50 ms (0–1)
-    mean_rr: float          # Mean RR interval
+    rmssd: float
+    sdnn: float
+    pnn50: float
+    mean_rr: float
 
-    # Nonlinear (Poincaré plot)
-    sd1: float              # Short-term variability (≈ RMSSD / √2)
-    sd2: float              # Long-term variability
+    sd1: float
+    sd2: float
 
     # Diagnostics
     n_hr_samples: int = 0
@@ -56,7 +53,7 @@ class HRVFeatures:
     window_duration_s: float = 0.0
 
     def to_dict(self) -> dict:
-        """Model-ready features — mirrors GSRFeatures.to_dict()."""
+        """Model-ready features"""
         return {
             "hr_mean":   self.hr_mean,
             "hr_std":    self.hr_std,
@@ -90,7 +87,7 @@ def compute_hrv_features(
     sdnn  = float(np.std(rr_samples))
     pnn50 = float(np.mean(np.abs(successive_diffs) > 50.0))
 
-    # Poincaré: plot RR[n] vs RR[n+1], SD1 = short-term, SD2 = long-term
+    # Poincare: plot RR[n] vs RR[n+1], SD1 = short-term, SD2 = long-term
     sd1 = float(np.std(successive_diffs) / np.sqrt(2))
     sd2 = float(np.sqrt(max(0.0, 2 * sdnn**2 - sd1**2)))
 
@@ -116,14 +113,6 @@ def compute_hrv_features(
 # Rolling window extractor
 # ---------------------------------------------------------------------------
 class HRVFeatureExtractor:
-    """
-    Stateful rolling-window HRV extractor — mirrors GSRFeatureExtractor.
-
-    Feed it each BLE notification via add_reading(). Call window_ready()
-    to check if enough data has accumulated, then extract_features() to get
-    a dict ready for your arousal model.
-    """
-
     def __init__(
         self,
         window_seconds: float = DEFAULT_WINDOW_SECONDS,
@@ -145,7 +134,6 @@ class HRVFeatureExtractor:
     def add_reading(self, hr_bpm: int, rr_intervals_ms: list[float]) -> None:
         """
         Feed one BLE notification packet.
-        Mirrors GSRFeatureExtractor.add_reading() — call from handle_hr().
         """
         self._hr_buffer.append(float(hr_bpm))
         self._samples_since_last_extract += 1
@@ -165,10 +153,6 @@ class HRVFeatureExtractor:
         )
 
     def extract_features(self) -> dict:
-        """
-        Extract features from current window, reset step counter.
-        Returns a flat dict — same pattern as GSRFeatureExtractor.extract_features().
-        """
         if not self.window_ready():
             raise RuntimeError("Window not ready. Call window_ready() first.")
 
@@ -199,9 +183,6 @@ class HRVFeatureExtractor:
         return len(self._hr_buffer) / self._hr_window_size
 
 
-# ---------------------------------------------------------------------------
-# Read helpers (used by the standalone __main__ test below)
-# ---------------------------------------------------------------------------
 async def read_battery(client):
     data = await client.read_gatt_char(BATTERY_CHAR)
     print(f"Battery: {data[0]}%")
@@ -217,9 +198,6 @@ async def read_device_info(client):
         print(f"{label}: {data.decode('utf-8', errors='replace')}")
 
 
-# ---------------------------------------------------------------------------
-# Standalone smoke test — runs only when this file is executed directly
-# ---------------------------------------------------------------------------
 if __name__ == "__main__":
     # Build the extractor and BLE notification handler locally so they
     # don't exist as module globals when hrv_features is imported as a

@@ -1,25 +1,3 @@
-"""
-Re-analyse SmolVLM2 evaluation outputs.
-
-Takes the results folder produced by evaluate_smolvlm2.py and writes a new
-analysis subfolder inside it with corrected plots and CSVs.
-
-Fixes from the first-pass analysis:
-  - P2 never says 'positive/neutral/negative' literally; adds a sentiment-word
-    fallback parser so we can compare it to ground truth at all.
-  - P3 is an intensity prompt, not a valence prompt: dropped from the valence
-    agreement chart and confusion matrices.
-  - P3 always outputs ~1 number, so its 0 CV in the consistency chart is
-    misleading; dropped from that chart too.
-  - Intensity scatter (P3 vs ground truth) is generated.
-  - Adds latency + output-length plots.
-
-Usage:
-    python reanalyse.py --results_dir results/
-    python reanalyse.py --results_dir results/ --labels my_labels.csv
-    python reanalyse.py --results_dir results/ --out_subdir reanalysis_v2
-"""
-
 from __future__ import annotations
 
 import argparse
@@ -461,7 +439,7 @@ def main():
         print(f"Using labels from: {labels_path}")
         labels = pd.read_csv(labels_path)
     else:
-        print("No labels file — inferring from clip filename prefixes.")
+        print("No labels file, inferring from clip filename prefixes.")
         labels = infer_labels(df["clip"].unique().tolist())
         labels = labels.dropna(subset=["valence"])
         print(f"Inferred labels for {len(labels)} / {df['clip'].nunique()} clips")

@@ -1,25 +1,3 @@
-"""
-tune_threshold_ensemble.py
-
-Sweep contamination values for the ensemble — train both sub-models at each
-contamination and report per-session flag rate, split by source.
-
-For each (contamination, session), this prints:
-    gsr_flag_rate  : % of GSR windows in the session flagged by the GSR model
-    hrv_flag_rate  : % of HRV windows in the session flagged by the HRV model
-    any_rate       : % of all windows (either source) flagged under 'any' mode
-    all_rate       : % of timepoints flagged under 'all' mode (both sources
-                     agree within `window_pair_s` of each other)
-
-A good contamination gives a wide gap between the mean baseline flag rate
-and the mean non-baseline flag rate for a given combine mode.
-
-Usage:
-    python tune_threshold_ensemble.py sessions/ \\
-        --baseline-prefix baseline \\
-        --contaminations 0.005,0.01,0.02,0.05,0.1
-"""
-
 from __future__ import annotations
 
 import argparse
@@ -128,7 +106,7 @@ def run_sweep(
             print(f"[SWEEP] Skipping {source}: too few training windows ({X.shape[0]})")
             continue
         train_matrices[source] = {"X": X, "feature_cols": feature_cols}
-        print(f"[SWEEP] {source.upper()} training: {X.shape[0]} windows × {X.shape[1]} features")
+        print(f"[SWEEP] {source.upper()} training: {X.shape[0]} windows {X.shape[1]} features")
 
     if not train_matrices:
         sys.exit("[ERROR] No source had enough baseline data to train.")
@@ -238,7 +216,7 @@ def print_table(df: pd.DataFrame) -> None:
             continue
 
         best_c, best_b, best_n, best_g = max(valid, key=lambda r: r[3])
-        note = "" if best_g >= MIN_GAP else "  (gap small — features may not discriminate)"
+        note = "" if best_g >= MIN_GAP else "  (gap small, features may not discriminate)"
         print(f"    {source.upper()}: best c={best_c} "
               f"(baseline {best_b:.1f}%, non-baseline {best_n:.1f}%, "
               f"gap +{best_g:.1f} pts){note}")
@@ -283,11 +261,6 @@ def plot_sweep(df: pd.DataFrame, out_path: Path) -> None:
     fig.savefig(out_path, dpi=140, bbox_inches="tight")
     plt.close(fig)
     print(f"\n[SWEEP] Plot saved: {out_path}")
-
-
-# ---------------------------------------------------------------------------
-# Main
-# ---------------------------------------------------------------------------
 
 
 def main() -> int:

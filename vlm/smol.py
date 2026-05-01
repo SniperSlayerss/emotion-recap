@@ -1,28 +1,3 @@
-"""
-SmolVLM2 prompt evaluation across multiple body-cam clips.
-
-For each (prompt, clip) pair this script:
-  - runs the model once
-  - records latency, output text, output length (chars + tokens)
-  - parses a valence label and intensity rating where applicable
-
-It then compares predictions against retrospective ground-truth labels
-(valence + intensity) provided in a CSV, and produces dissertation-ready
-plots plus a results CSV.
-
-Expected ground-truth CSV (--labels):
-    clip,valence,intensity
-    clip01.mp4,positive,7
-    clip02.mp4,neutral,3
-    ...
-
-Usage:
-    python evaluate_smolvlm2.py \
-        --clips_dir vlm/clips \
-        --labels vlm/labels.csv \
-        --out_dir results/
-"""
-
 from __future__ import annotations
 
 import argparse

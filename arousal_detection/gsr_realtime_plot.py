@@ -16,34 +16,16 @@ from gsr_features import (
     DEFAULT_WINDOW_SECONDS,
 )
 
-# ---------------------------------------------------------------------
-# Sensor setup (same mock fallback you already use)
-# ---------------------------------------------------------------------
-try:
-    from grove.adc import ADC
+from grove.adc import ADC
 
-    adc = ADC()
+adc = ADC()
 
-    class Sensor:
-        def __init__(self, channel):
-            self.channel = channel
+class Sensor:
+    def __init__(self, channel):
+        self.channel = channel
 
-        def read(self):
-            return adc.read(self.channel)
-
-except ImportError:
-    print("[gsr] grove.adc not available — using mock sensor.")
-
-    class Sensor:
-        def __init__(self, *_):
-            self._t = 0
-
-        def read(self):
-            self._t += 1
-            base = 300 + 20 * np.sin(self._t / 50)
-            noise = np.random.normal(0, 3)
-            return int(np.clip(base + noise, 0, 1023))
-
+    def read(self):
+        return adc.read(self.channel)
 
 # ---------------------------------------------------------------------
 # Real-time plotter
@@ -130,7 +112,7 @@ def main(adc_channel):
 
     last_plot = time.time()
 
-    print("[gsr] Real-time plotting started → gsr_live.png")
+    print("[gsr] Real-time plotting started gsr_live.png")
 
     while True:
         raw = sensor.read()
